@@ -1,0 +1,30 @@
+{
+  "name": "mmo-infrastructure",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "cdk": "cdk",
+    "synth": "npm run build && cdk synth",
+    "deploy:pipeline": "npm run build && cdk deploy PipelineStack"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.147",
+    "@types/jsonwebtoken": "^9.0.9",
+    "@types/node": "^22.13.10",
+    "aws-cdk": "^2.1000.2",
+    "esbuild": "^0.25.1",
+    "typescript": "^5.8.2"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.758.0",
+    "@aws-sdk/client-secrets-manager": "^3.758.0",
+    "@aws-sdk/lib-dynamodb": "^3.758.0",
+    "aws-cdk-lib": "^2.189.0",
+    "constructs": "^10.4.2",
+    "firebase-admin": "^13.2.0",
+    "jsonwebtoken": "^9.0.2",
+    "source-map-support": "^0.5.21"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "githubOwner": "YOUR_GITHUB_USER_OR_ORG",
+  "githubRepo": "MMO-Infrastructure",
+  "githubBranch": "develop",
+  "githubConnectionArn": "arn:aws:codestar-connections:REGION:ACCOUNT:connection/UUID"
+}

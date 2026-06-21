@@ -1,0 +1,136 @@
+openapi: 3.0.3
+info:
+  title: MMO Character API
+  version: 0.1.0
+  description: Phase 4 persistence API (Firebase Auth + game session JWT)
+servers:
+  - url: https://{apiId}.execute-api.{region}.amazonaws.com
+    variables:
+      apiId:
+        default: example
+      region:
+        default: eu-west-2
+paths:
+  /auth/session:
+    post:
+      summary: Exchange Firebase ID token for game session JWT
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                firebaseIdToken:
+                  type: string
+      responses:
+        '200':
+          description: Game session issued
+  /characters:
+    get:
+      summary: List characters for authenticated account
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Character list
+    post:
+      summary: Create a character
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  minLength: 3
+                  maxLength: 16
+      responses:
+        '201':
+          description: Character created
+  /characters/{characterId}/enter:
+    post:
+      summary: Enter world — returns scoped JWT and zone connection info
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: characterId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Enter world payload
+  /characters/{characterId}:
+    put:
+      summary: Save character snapshot (ZoneServer internal)
+      parameters:
+        - name: characterId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-Internal-Api-Key
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CharacterRecord'
+      responses:
+        '200':
+          description: Character saved
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    CharacterRecord:
+      type: object
+      required:
+        - accountId
+        - characterId
+      properties:
+        accountId:
+          type: string
+        characterId:
+          type: string
+        name:
+          type: string
+        level:
+          type: integer
+        xp:
+          type: integer
+        money:
+          type: integer
+        hp:
+          type: number
+        maxHp:
+          type: number
+        sp:
+          type: number
+        maxSp:
+          type: number
+        zoneId:
+          type: string
+        x:
+          type: number
+        y:
+          type: number
+        z:
+          type: number
