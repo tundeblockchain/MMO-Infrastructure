@@ -37,13 +37,13 @@ export class ApiStack extends cdk.Stack {
     };
 
     const lambdaDefaults: Partial<lambdaNodejs.NodejsFunctionProps> = {
-      runtime: lambda.Runtime.NODEJS_20_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       memorySize: 512,
       timeout: cdk.Duration.seconds(15),
       bundling: {
         minify: true,
         sourceMap: true,
-        target: 'node20',
+        target: 'node24',
         externalModules: [],
       },
       environment: commonEnv,

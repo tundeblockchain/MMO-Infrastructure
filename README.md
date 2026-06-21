@@ -16,7 +16,7 @@ Dev/Prod stages:
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 22+ (local/CDK); Lambdas run **Node.js 24** (`nodejs24.x`)
 - AWS CLI configured (`aws sts get-caller-identity`)
 - CDK CLI (`npm install -g aws-cdk` or use `npx cdk`)
 - A **private GitHub repo** for this project
