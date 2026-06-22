@@ -3,7 +3,7 @@ import {
   SecretsManagerClient,
 } from '@aws-sdk/client-secrets-manager';
 import * as admin from 'firebase-admin';
-import jwt from 'jsonwebtoken';
+import * as jwt from 'jsonwebtoken';
 
 const secretsClient = new SecretsManagerClient({});
 
