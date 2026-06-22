@@ -47,30 +47,38 @@ export class ApiStack extends cdk.Stack {
         externalModules: [],
       },
       environment: commonEnv,
-      logRetention: logs.RetentionDays.ONE_MONTH,
     };
 
-    const authSessionFn = new lambdaNodejs.NodejsFunction(this, 'AuthSessionFn', {
-      ...lambdaDefaults,
+    const createLambda = (
+      id: string,
+      props: Pick<lambdaNodejs.NodejsFunctionProps, 'functionName' | 'entry' | 'description'>
+    ) => {
+      const logGroup = new logs.LogGroup(this, `${id}Logs`, {
+        retention: logs.RetentionDays.ONE_MONTH,
+      });
+      return new lambdaNodejs.NodejsFunction(this, id, {
+        ...lambdaDefaults,
+        logGroup,
+        handler: 'handler',
+        ...props,
+      });
+    };
+
+    const authSessionFn = createLambda('AuthSessionFn', {
       functionName: `${prefix}-auth-session`,
       entry: path.join(lambdasDir, 'auth-session', 'handler.ts'),
-      handler: 'handler',
       description: 'Verify Firebase ID token and issue game session JWT',
     });
 
-    const charactersFn = new lambdaNodejs.NodejsFunction(this, 'CharactersFn', {
-      ...lambdaDefaults,
+    const charactersFn = createLambda('CharactersFn', {
       functionName: `${prefix}-characters`,
       entry: path.join(lambdasDir, 'characters', 'handler.ts'),
-      handler: 'handler',
       description: 'List/create characters and enter world',
     });
 
-    const charactersSaveFn = new lambdaNodejs.NodejsFunction(this, 'CharactersSaveFn', {
-      ...lambdaDefaults,
+    const charactersSaveFn = createLambda('CharactersSaveFn', {
       functionName: `${prefix}-characters-save`,
       entry: path.join(lambdasDir, 'characters-save', 'handler.ts'),
-      handler: 'handler',
       description: 'Save character snapshot (ZoneServer or internal)',
     });
 

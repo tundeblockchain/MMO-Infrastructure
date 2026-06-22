@@ -34,6 +34,7 @@ export class PipelineStack extends cdk.Stack {
 
     const pipeline = new pipelines.CodePipeline(this, 'Pipeline', {
       pipelineName: 'MmoInfrastructure',
+      pipelineType: cdk.aws_codepipeline.PipelineType.V2,
       crossAccountKeys: false,
       synth,
       selfMutation: true,

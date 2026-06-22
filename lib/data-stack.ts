@@ -27,7 +27,9 @@ export class DataStack extends cdk.Stack {
         props.stageName === 'prod'
           ? cdk.RemovalPolicy.RETAIN
           : cdk.RemovalPolicy.DESTROY,
-      pointInTimeRecovery: props.stageName === 'prod',
+      pointInTimeRecoverySpecification: {
+        pointInTimeRecoveryEnabled: props.stageName === 'prod',
+      },
     });
 
     this.table.addGlobalSecondaryIndex({
