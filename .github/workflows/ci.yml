@@ -29,9 +29,9 @@ jobs:
       - name: CDK Synth (no deploy)
         run: |
           npx cdk synth \
-            -c githubConnectionArn=arn:aws:codestar-connections:eu-west-2:123456789012:connection/dummy \
-            -c githubOwner=dummy-owner \
-            -c githubRepo=dummy-repo
+            -c githubConnectionArn=arn:aws:codestar-connections:eu-west-2:000000000000:connection/ci-dummy \
+            -c githubOwner=tundeblockchain \
+            -c githubRepo=MMO-Infrastructure
         env:
-          CDK_DEFAULT_ACCOUNT: '123456789012'
+          CDK_DEFAULT_ACCOUNT: '000000000000'
           CDK_DEFAULT_REGION: 'eu-west-2'
