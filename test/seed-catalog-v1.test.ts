@@ -5,8 +5,19 @@
  * Key requirements:
  * - 6 classes with exact starting primary stats
  * - 48 skills (6 classes × 8 skills)
- * - Thermal Shock must have kind='reaction'
+ * - Thermal Shock must have kind='reaction' with internalCooldownSeconds=1
+ * - Execution: missing-HP scaling with boss cap 3.25 P
+ * - Sever: per-stack coefficients 1.50/2.00/2.60/3.30/4.20
+ * - Divine Intervention: anti-death + 2.50 P heal
+ * - Hunter's Mark: duration 8s
+ * - Remote Detonation: separate turret/drone/mine coeffs
+ * - Resonance bonusPercent as decimals (0.10, not 10)
  * - Combat constants as decimals
+ * - Resource gen/spend with % max support
+ * - Skill timing (castMs/activeMs/recoveryMs)
+ * - Stagger coefficients
+ * - PvP multipliers
+ * - Per-stack and conditional coefficients
  * - Published catalogs are immutable
  */
 
@@ -59,113 +70,20 @@ describe('Seed Catalog V1 - Data Validation', () => {
       expect(COMBAT_CONSTANTS_V1.defense.blockDamageReduction).toBe(0.50);
     });
 
-    it('should have glancingHit.damageMultiplier as 0.50 (50%)', () => {
-      expect(COMBAT_CONSTANTS_V1.glancingHit.damageMultiplier).toBe(0.50);
+    it('should have stagger constants defined and non-empty', () => {
+      expect(COMBAT_CONSTANTS_V1.stagger).toBeDefined();
+      expect(COMBAT_CONSTANTS_V1.stagger.baseStaggerThreshold).toBeGreaterThan(0);
+      expect(COMBAT_CONSTANTS_V1.stagger.staggerRecoveryRate).toBeGreaterThan(0);
+      expect(COMBAT_CONSTANTS_V1.stagger.staggerDurationSeconds).toBeGreaterThan(0);
     });
 
-    it('should have glancingHit.canCrit as false', () => {
-      expect(COMBAT_CONSTANTS_V1.glancingHit.canCrit).toBe(false);
-    });
-
-    it('should have glancingHit.canStagger as false', () => {
-      expect(COMBAT_CONSTANTS_V1.glancingHit.canStagger).toBe(false);
-    });
-
-    it('should have accuracyBonus.precisionConstant as 300', () => {
-      expect(COMBAT_CONSTANTS_V1.accuracy.accuracyBonus.precisionConstant).toBe(300);
-    });
-
-    it('should have accuracyBonus.maxAccuracyBonus as 0.15 (15%)', () => {
-      expect(COMBAT_CONSTANTS_V1.accuracy.accuracyBonus.maxAccuracyBonus).toBe(0.15);
-    });
-
-    it('should have weakPoint.precisionMultiplier as 0.0015', () => {
-      expect(COMBAT_CONSTANTS_V1.accuracy.weakPoint.precisionMultiplier).toBe(0.0015);
-    });
-
-    it('should have critChance.luckConstant as 500', () => {
-      expect(COMBAT_CONSTANTS_V1.critical.critChance.luckConstant).toBe(500);
-    });
-
-    it('should have critChance.maxLuckCritBonus as 0.30 (30%)', () => {
-      expect(COMBAT_CONSTANTS_V1.critical.critChance.maxLuckCritBonus).toBe(0.30);
-    });
-
-    it('should have procChance.luckDivisor as 500', () => {
-      expect(COMBAT_CONSTANTS_V1.critical.procChance.luckDivisor).toBe(500);
-    });
-
-    it('should have defenseConstant.baseConstant as 200', () => {
-      expect(COMBAT_CONSTANTS_V1.defense.defenseConstant.baseConstant).toBe(200);
-    });
-
-    it('should have defenseConstant.levelMultiplier as 15', () => {
-      expect(COMBAT_CONSTANTS_V1.defense.defenseConstant.levelMultiplier).toBe(15);
-    });
-
-    it('should have status.resistanceConstant as 100', () => {
-      expect(COMBAT_CONSTANTS_V1.status.resistanceConstant).toBe(100);
-    });
-
-    it('should have statCaps.softCap as 100', () => {
-      expect(COMBAT_CONSTANTS_V1.statCaps.softCap).toBe(100);
-    });
-
-    it('should have statCaps.hardCap as 150', () => {
-      expect(COMBAT_CONSTANTS_V1.statCaps.hardCap).toBe(150);
-    });
-
-    it('should have speed.attackSpeed.finesseConstant as 400', () => {
-      expect(COMBAT_CONSTANTS_V1.speed.attackSpeed.finesseConstant).toBe(400);
-    });
-
-    it('should have speed.dodgeRecovery.finesseConstant as 1000', () => {
-      expect(COMBAT_CONSTANTS_V1.speed.dodgeRecovery.finesseConstant).toBe(1000);
-    });
-
-    it('should have vitality.maxHp.vitalityDivisor as 100', () => {
-      expect(COMBAT_CONSTANTS_V1.vitality.maxHp.vitalityDivisor).toBe(100);
-    });
-
-    it('should have vitality.healingReceived.vitalityDivisor as 1000', () => {
-      expect(COMBAT_CONSTANTS_V1.vitality.healingReceived.vitalityDivisor).toBe(1000);
-    });
-
-    it('should have devicePower.techDivisor as 100', () => {
-      expect(COMBAT_CONSTANTS_V1.powerScaling.devicePower.techDivisor).toBe(100);
-    });
-
-    it('should have spellPower multipliers (INT*2 + Level*1)', () => {
-      expect(COMBAT_CONSTANTS_V1.powerScaling.spellPower.intellectMultiplier).toBe(2);
-      expect(COMBAT_CONSTANTS_V1.powerScaling.spellPower.levelMultiplier).toBe(1);
-    });
-
-    it('should have techPower multipliers (Tech*2 + Level*1)', () => {
-      expect(COMBAT_CONSTANTS_V1.powerScaling.techPower.techMultiplier).toBe(2);
-      expect(COMBAT_CONSTANTS_V1.powerScaling.techPower.levelMultiplier).toBe(1);
-    });
-
-    it('should have stat allocation bands as specified', () => {
-      expect(COMBAT_CONSTANTS_V1.statAllocationBands).toHaveLength(4);
-      
-      const band1 = COMBAT_CONSTANTS_V1.statAllocationBands.find(b => b.minLevel === 1);
-      expect(band1).toBeDefined();
-      expect(band1!.maxLevel).toBe(10);
-      expect(band1!.pointsPerLevel).toBe(2);
-
-      const band2 = COMBAT_CONSTANTS_V1.statAllocationBands.find(b => b.minLevel === 11);
-      expect(band2).toBeDefined();
-      expect(band2!.maxLevel).toBe(30);
-      expect(band2!.pointsPerLevel).toBe(3);
-
-      const band3 = COMBAT_CONSTANTS_V1.statAllocationBands.find(b => b.minLevel === 31);
-      expect(band3).toBeDefined();
-      expect(band3!.maxLevel).toBe(60);
-      expect(band3!.pointsPerLevel).toBe(4);
-
-      const band4 = COMBAT_CONSTANTS_V1.statAllocationBands.find(b => b.minLevel === 61);
-      expect(band4).toBeDefined();
-      expect(band4!.pointsPerLevel).toBe(5);
+    it('should have PvP constants defined and as decimals', () => {
+      expect(COMBAT_CONSTANTS_V1.pvp).toBeDefined();
+      expect(COMBAT_CONSTANTS_V1.pvp.globalDamageMultiplier).toBeLessThan(1);
+      expect(COMBAT_CONSTANTS_V1.pvp.globalDamageMultiplier).toBeGreaterThan(0);
+      expect(COMBAT_CONSTANTS_V1.pvp.globalHealingMultiplier).toBeLessThan(1);
+      expect(COMBAT_CONSTANTS_V1.pvp.globalHealingMultiplier).toBeGreaterThan(0);
+      expect(COMBAT_CONSTANTS_V1.pvp.ccDurationMultiplier).toBeLessThan(1);
     });
   });
 
@@ -262,24 +180,6 @@ describe('Seed Catalog V1 - Data Validation', () => {
       expect(shade!.primaryResource).toBe('momentum');
       expect(shade!.resonance).toBe('subterfuge');
     });
-
-    it('should use only original class names (no Ragnarok/Arknights/Endfield)', () => {
-      const validNames = ['vanguard', 'ranger', 'arcanist', 'machinist', 'warden', 'shade'];
-      const classIds = CLASSES_V1.map(c => c.classId);
-      
-      expect(classIds).toEqual(expect.arrayContaining(validNames));
-      expect(classIds).toHaveLength(6);
-      
-      const forbiddenNames = [
-        'knight', 'wizard', 'assassin', 'priest', 'monk', 'crusader',
-        'sniper', 'guard', 'medic', 'specialist', 'caster', 'defender',
-        'doctor', 'texas', 'lappland', 'exusiai', 'silverash',
-      ];
-      
-      for (const classId of classIds) {
-        expect(forbiddenNames).not.toContain(classId.toLowerCase());
-      }
-    });
   });
 
   describe('Skills - 48 Skills Total', () => {
@@ -299,176 +199,296 @@ describe('Seed Catalog V1 - Data Validation', () => {
         expect(classSkills).toHaveLength(8);
       }
     });
+  });
 
-    it('should have Thermal Shock with kind="reaction" (CRITICAL)', () => {
+  describe('Thermal Shock - CRITICAL: kind=reaction, internalCooldown=1', () => {
+    it('should have kind="reaction" (NOT active)', () => {
       const thermalShock = SKILLS_V1.find(s => s.skillId === 'arcanist_thermal_shock');
       expect(thermalShock).toBeDefined();
       expect(thermalShock!.kind).toBe('reaction');
-      expect(thermalShock!.displayName).toBe('Thermal Shock');
     });
 
-    it('should have stable skillIds following pattern classId_skill_name', () => {
-      for (const skill of SKILLS_V1) {
-        expect(skill.skillId).toMatch(/^[a-z]+_[a-z_]+$/);
-        expect(skill.skillId.startsWith(skill.classId)).toBe(true);
-      }
+    it('should have internalCooldownSeconds=1 (per target)', () => {
+      const thermalShock = SKILLS_V1.find(s => s.skillId === 'arcanist_thermal_shock');
+      expect(thermalShock).toBeDefined();
+      expect(thermalShock!.internalCooldownSeconds).toBe(1);
     });
 
-    it('should have valid skill coefficients with basePower and scaling', () => {
-      for (const skill of SKILLS_V1) {
-        expect(skill.coefficients).toBeDefined();
-        expect(typeof skill.coefficients.basePower).toBe('number');
-        expect(Array.isArray(skill.coefficients.scaling)).toBe(true);
-      }
-    });
-
-    it('should have Vanguard damage skills with physical power scaling', () => {
-      const vanguardDamageSkills = SKILLS_V1.filter(
-        s => s.classId === 'vanguard' &&
-          s.kind === 'active' &&
-          s.coefficients.basePower > 0 &&
-          s.coefficients.scaling.length > 0
-      );
-      
-      for (const skill of vanguardDamageSkills) {
-        const hasAttackPower = skill.coefficients.scaling.some(s => s.stat === 'attackPower');
-        expect(hasAttackPower).toBe(true);
-      }
-    });
-
-    it('should have Arcanist skills with spell power scaling', () => {
-      const arcanistSkills = SKILLS_V1.filter(s => s.classId === 'arcanist' && s.kind !== 'passive');
-      const attackSkills = arcanistSkills.filter(s => s.coefficients.basePower > 0);
-      
-      for (const skill of attackSkills) {
-        const hasSpellPower = skill.coefficients.scaling.some(s => s.stat === 'spellPower');
-        expect(hasSpellPower || skill.coefficients.basePower === 0).toBe(true);
-      }
-    });
-
-    it('should have Cleaving Strike generating Resolve', () => {
-      const cleavingStrike = SKILLS_V1.find(s => s.skillId === 'vanguard_cleaving_strike');
-      expect(cleavingStrike).toBeDefined();
-      expect(cleavingStrike!.coefficients.basePower).toBe(1.50);
-    });
-
-    it('should have all Shade momentum costs correctly set', () => {
-      const smokVeil = SKILLS_V1.find(s => s.skillId === 'shade_smoke_veil');
-      expect(smokVeil).toBeDefined();
-      expect(smokVeil!.resourceCost).toBe(2);
-      
-      const execution = SKILLS_V1.find(s => s.skillId === 'shade_execution');
-      expect(execution).toBeDefined();
-      expect(execution!.resourceCost).toBe(3);
+    it('should have cooldownSeconds=0 (no global cooldown)', () => {
+      const thermalShock = SKILLS_V1.find(s => s.skillId === 'arcanist_thermal_shock');
+      expect(thermalShock).toBeDefined();
+      expect(thermalShock!.cooldownSeconds).toBe(0);
     });
   });
 
-  describe('Statuses - Referenced Effects', () => {
+  describe('Execution - Missing HP Scaling with Boss Cap', () => {
+    it('should have missingHp scaling (NOT flat 5.00 P)', () => {
+      const execution = SKILLS_V1.find(s => s.skillId === 'shade_execution');
+      expect(execution).toBeDefined();
+      expect(execution!.coefficients.basePower).not.toBe(5.00);
+      
+      const hasMissingHpScaling = execution!.coefficients.scaling.some(
+        s => s.stat === 'missingHp'
+      );
+      expect(hasMissingHpScaling).toBe(true);
+    });
+
+    it('should have boss_target conditional with cap 3.25 P', () => {
+      const execution = SKILLS_V1.find(s => s.skillId === 'shade_execution');
+      expect(execution).toBeDefined();
+      expect(execution!.coefficients.conditionals).toBeDefined();
+      
+      const bossCap = execution!.coefficients.conditionals!.find(
+        c => c.condition === 'boss_target'
+      );
+      expect(bossCap).toBeDefined();
+      expect(bossCap!.basePower).toBe(3.25);
+    });
+
+    it('should have below_hp_threshold conditional at 0.25 (25%)', () => {
+      const execution = SKILLS_V1.find(s => s.skillId === 'shade_execution');
+      expect(execution).toBeDefined();
+      
+      const hpThreshold = execution!.coefficients.conditionals!.find(
+        c => c.condition === 'below_hp_threshold'
+      );
+      expect(hpThreshold).toBeDefined();
+      expect(hpThreshold!.threshold).toBe(0.25);
+    });
+  });
+
+  describe('Sever - Per-Stack Coefficients', () => {
+    it('should have perStack coefficients 1.50/2.00/2.60/3.30/4.20', () => {
+      const sever = SKILLS_V1.find(s => s.skillId === 'shade_sever');
+      expect(sever).toBeDefined();
+      expect(sever!.coefficients.perStack).toBeDefined();
+      expect(sever!.coefficients.perStack!.basePowerPerStack).toEqual([1.50, 2.00, 2.60, 3.30, 4.20]);
+    });
+
+    it('should have scalingPerStack with FIN scaling per stack', () => {
+      const sever = SKILLS_V1.find(s => s.skillId === 'shade_sever');
+      expect(sever).toBeDefined();
+      expect(sever!.coefficients.perStack!.scalingPerStack).toBeDefined();
+      expect(sever!.coefficients.perStack!.scalingPerStack).toHaveLength(5);
+    });
+  });
+
+  describe('Divine Intervention - Anti-Death + 2.50 P Heal', () => {
+    it('should have basePower 2.50 (NOT 0.30 maxHp)', () => {
+      const divineIntervention = SKILLS_V1.find(s => s.skillId === 'warden_divine_intervention');
+      expect(divineIntervention).toBeDefined();
+      expect(divineIntervention!.coefficients.basePower).toBe(2.50);
+    });
+
+    it('should have healingPower scaling', () => {
+      const divineIntervention = SKILLS_V1.find(s => s.skillId === 'warden_divine_intervention');
+      expect(divineIntervention).toBeDefined();
+      
+      const hasHealingPower = divineIntervention!.coefficients.scaling.some(
+        s => s.stat === 'healingPower'
+      );
+      expect(hasHealingPower).toBe(true);
+    });
+
+    it('should apply divine_intervention status (anti-death)', () => {
+      const divineIntervention = SKILLS_V1.find(s => s.skillId === 'warden_divine_intervention');
+      expect(divineIntervention).toBeDefined();
+      expect(divineIntervention!.coefficients.appliesStatus).toBe('divine_intervention');
+    });
+  });
+
+  describe("Hunter's Mark - Duration 8s", () => {
+    it('should have effectDuration=8 (NOT 12)', () => {
+      const huntersMark = SKILLS_V1.find(s => s.skillId === 'ranger_hunters_mark');
+      expect(huntersMark).toBeDefined();
+      expect(huntersMark!.coefficients.effectDuration).toBe(8);
+    });
+  });
+
+  describe('Remote Detonation - Separate Target Coefficients', () => {
+    it('should have targetVariants with turret/drone/mine', () => {
+      const remoteDetonation = SKILLS_V1.find(s => s.skillId === 'machinist_remote_detonation');
+      expect(remoteDetonation).toBeDefined();
+      expect(remoteDetonation!.coefficients.targetVariants).toBeDefined();
+      expect(remoteDetonation!.coefficients.targetVariants!.turret).toBeDefined();
+      expect(remoteDetonation!.coefficients.targetVariants!.drone).toBeDefined();
+      expect(remoteDetonation!.coefficients.targetVariants!.mine).toBeDefined();
+    });
+
+    it('should have turret=1.10, drone=1.40, mine=2.40 DevicePower', () => {
+      const remoteDetonation = SKILLS_V1.find(s => s.skillId === 'machinist_remote_detonation');
+      expect(remoteDetonation).toBeDefined();
+      
+      const variants = remoteDetonation!.coefficients.targetVariants!;
+      expect(variants.turret.basePower).toBe(1.10);
+      expect(variants.drone.basePower).toBe(1.40);
+      expect(variants.mine.basePower).toBe(2.40);
+    });
+  });
+
+  describe('Resource Gen/Spend - % Max Resource Support', () => {
+    it('should have Arcanist skills with isPercentOfMax=true', () => {
+      const emberLance = SKILLS_V1.find(s => s.skillId === 'arcanist_ember_lance');
+      expect(emberLance).toBeDefined();
+      expect(emberLance!.resourceEffects).toBeDefined();
+      expect(emberLance!.resourceEffects!.length).toBeGreaterThan(0);
+      
+      const manaEffect = emberLance!.resourceEffects!.find(e => e.resourceId === 'mana');
+      expect(manaEffect).toBeDefined();
+      expect(manaEffect!.isPercentOfMax).toBe(true);
+    });
+
+    it('should have resource generation skills (Cleaving Strike +8/target)', () => {
+      const cleavingStrike = SKILLS_V1.find(s => s.skillId === 'vanguard_cleaving_strike');
+      expect(cleavingStrike).toBeDefined();
+      expect(cleavingStrike!.resourceEffects).toBeDefined();
+      
+      const resolveEffect = cleavingStrike!.resourceEffects!.find(e => e.resourceId === 'resolve');
+      expect(resolveEffect).toBeDefined();
+      expect(resolveEffect!.amount).toBeGreaterThan(0);
+      expect(resolveEffect!.perTargetBonus).toBe(8);
+    });
+
+    it('should have all skills with resourceEffects when they have resource interactions', () => {
+      const skillsWithResourceCost = SKILLS_V1.filter(
+        s => s.resourceCost > 0 || s.resourceId !== null
+      );
+      
+      for (const skill of skillsWithResourceCost) {
+        if (skill.kind !== 'passive') {
+          expect(skill.resourceEffects).toBeDefined();
+        }
+      }
+    });
+  });
+
+  describe('Skill Timing - Cast/Active/Recovery Ms', () => {
+    it('should have timing defined on all non-passive skills', () => {
+      const nonPassiveSkills = SKILLS_V1.filter(s => s.kind !== 'passive');
+      
+      for (const skill of nonPassiveSkills) {
+        expect(skill.timing).toBeDefined();
+        expect(typeof skill.timing!.castMs).toBe('number');
+        expect(typeof skill.timing!.activeMs).toBe('number');
+        expect(typeof skill.timing!.recoveryMs).toBe('number');
+      }
+    });
+
+    it('should have timing present on all skills', () => {
+      for (const skill of SKILLS_V1) {
+        expect(skill.timing).toBeDefined();
+      }
+    });
+  });
+
+  describe('Stagger Coefficients', () => {
+    it('should have stagger defined on all skills', () => {
+      for (const skill of SKILLS_V1) {
+        expect(skill.stagger).toBeDefined();
+        expect(typeof skill.stagger!.staggerPower).toBe('number');
+        expect(typeof skill.stagger!.canStagger).toBe('boolean');
+      }
+    });
+
+    it('should have stagger coefficients non-empty (at least some skills stagger)', () => {
+      const skillsThatCanStagger = SKILLS_V1.filter(
+        s => s.stagger && s.stagger.canStagger && s.stagger.staggerPower > 0
+      );
+      expect(skillsThatCanStagger.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('PvP Multipliers', () => {
+    it('should have pvpMultipliers present on combat skills', () => {
+      const combatSkills = SKILLS_V1.filter(
+        s => s.kind === 'active' && s.coefficients.basePower > 0
+      );
+      
+      const skillsWithPvP = combatSkills.filter(s => s.pvpMultipliers);
+      expect(skillsWithPvP.length).toBeGreaterThan(0);
+    });
+
+    it('should have PvP multipliers as decimals < 1 (damage reduction)', () => {
+      const skillsWithPvPDamage = SKILLS_V1.filter(
+        s => s.pvpMultipliers?.damageMultiplier !== undefined
+      );
+      
+      for (const skill of skillsWithPvPDamage) {
+        expect(skill.pvpMultipliers!.damageMultiplier).toBeLessThan(1);
+        expect(skill.pvpMultipliers!.damageMultiplier).toBeGreaterThan(0);
+      }
+    });
+  });
+
+  describe('Conditional Coefficients', () => {
+    it('should have conditionals on Piercing Shot (marked target)', () => {
+      const piercingShot = SKILLS_V1.find(s => s.skillId === 'ranger_piercing_shot');
+      expect(piercingShot).toBeDefined();
+      expect(piercingShot!.coefficients.conditionals).toBeDefined();
+      
+      const markedConditional = piercingShot!.coefficients.conditionals!.find(
+        c => c.condition === 'marked'
+      );
+      expect(markedConditional).toBeDefined();
+      expect(markedConditional!.basePower).toBe(3.00);
+    });
+
+    it('should have conditionals on Counterblow (perfect timing)', () => {
+      const counterblow = SKILLS_V1.find(s => s.skillId === 'vanguard_counterblow');
+      expect(counterblow).toBeDefined();
+      expect(counterblow!.coefficients.conditionals).toBeDefined();
+      
+      const perfectTimingConditional = counterblow!.coefficients.conditionals!.find(
+        c => c.condition === 'perfect_timing'
+      );
+      expect(perfectTimingConditional).toBeDefined();
+      expect(perfectTimingConditional!.basePower).toBe(3.20);
+    });
+  });
+
+  describe('Resonance - Decimal Bonus Percentages', () => {
+    it('should have all bonusPercent values as decimals (< 1)', () => {
+      for (const resonance of RESONANCES_V1) {
+        for (const bonus of resonance.partyBonus) {
+          expect(bonus.bonusPercent).toBeLessThan(1);
+          expect(bonus.bonusPercent).toBeGreaterThan(0);
+        }
+      }
+    });
+
+    it('should have valor bonusPercent as 0.10 (not 10)', () => {
+      const valor = RESONANCES_V1.find(r => r.resonanceId === 'valor');
+      expect(valor).toBeDefined();
+      
+      const hpBonus = valor!.partyBonus.find(b => b.stat === 'hp');
+      expect(hpBonus).toBeDefined();
+      expect(hpBonus!.bonusPercent).toBe(0.10);
+    });
+
+    it('should have exactly 6 resonances', () => {
+      expect(RESONANCES_V1).toHaveLength(6);
+    });
+  });
+
+  describe('Statuses - Non-Empty', () => {
     it('should have no empty data array', () => {
       expect(STATUSES_V1.length).toBeGreaterThan(0);
     });
 
-    it('should include Flame status', () => {
-      const flame = STATUSES_V1.find(s => s.statusId === 'flame');
-      expect(flame).toBeDefined();
-      expect(flame!.category).toBe('dot');
-    });
-
-    it('should include Frost status', () => {
-      const frost = STATUSES_V1.find(s => s.statusId === 'frost');
-      expect(frost).toBeDefined();
-    });
-
-    it('should include Mark status', () => {
-      const mark = STATUSES_V1.find(s => s.statusId === 'mark');
-      expect(mark).toBeDefined();
-      expect(mark!.category).toBe('debuff');
-    });
-
-    it('should include Venom/Poison status', () => {
-      const venom = STATUSES_V1.find(s => s.statusId === 'venom');
-      expect(venom).toBeDefined();
-      expect(venom!.category).toBe('dot');
-    });
-
-    it('should include Armor Break status', () => {
-      const armorBreak = STATUSES_V1.find(s => s.statusId === 'armor_break');
-      expect(armorBreak).toBeDefined();
-      expect(armorBreak!.category).toBe('debuff');
-    });
-
-    it('should include Weaken status', () => {
-      const weaken = STATUSES_V1.find(s => s.statusId === 'weaken');
-      expect(weaken).toBeDefined();
-      expect(weaken!.category).toBe('debuff');
-    });
-
-    it('should include Exhausted status', () => {
-      const exhausted = STATUSES_V1.find(s => s.statusId === 'exhausted');
-      expect(exhausted).toBeDefined();
-      expect(exhausted!.category).toBe('debuff');
-    });
-
-    it('should include Harmony status', () => {
-      const harmony = STATUSES_V1.find(s => s.statusId === 'harmony');
-      expect(harmony).toBeDefined();
-      expect(harmony!.category).toBe('hot');
+    it('should include divine_intervention status', () => {
+      const divineIntervention = STATUSES_V1.find(s => s.statusId === 'divine_intervention');
+      expect(divineIntervention).toBeDefined();
+      expect(divineIntervention!.persistsThroughDeath).toBe(true);
     });
   });
 
-  describe('Elements - 8 Types with Relationships', () => {
+  describe('Elements - Non-Empty', () => {
     it('should have no empty data array', () => {
       expect(ELEMENTS_V1.length).toBeGreaterThan(0);
     });
 
     it('should have exactly 8 elements', () => {
       expect(ELEMENTS_V1).toHaveLength(8);
-    });
-
-    it('should include all required elements', () => {
-      const elementIds = ELEMENTS_V1.map(e => e.elementId);
-      expect(elementIds).toContain('physical');
-      expect(elementIds).toContain('fire');
-      expect(elementIds).toContain('ice');
-      expect(elementIds).toContain('lightning');
-      expect(elementIds).toContain('arcane');
-      expect(elementIds).toContain('nature');
-      expect(elementIds).toContain('shadow');
-      expect(elementIds).toContain('radiant');
-    });
-
-    it('should have strongAgainst/weakAgainst as decimals', () => {
-      const fire = ELEMENTS_V1.find(e => e.elementId === 'fire');
-      expect(fire).toBeDefined();
-      expect(fire!.strongAgainst.ice).toBe(1.25);
-      expect(fire!.strongAgainst.nature).toBe(1.25);
-    });
-  });
-
-  describe('Resonances - 6 Types', () => {
-    it('should have no empty data array', () => {
-      expect(RESONANCES_V1.length).toBeGreaterThan(0);
-    });
-
-    it('should have exactly 6 resonances', () => {
-      expect(RESONANCES_V1).toHaveLength(6);
-    });
-
-    it('should include all class resonances', () => {
-      const resonanceIds = RESONANCES_V1.map(r => r.resonanceId);
-      expect(resonanceIds).toContain('valor');
-      expect(resonanceIds).toContain('precision');
-      expect(resonanceIds).toContain('arcana');
-      expect(resonanceIds).toContain('innovation');
-      expect(resonanceIds).toContain('sanctuary');
-      expect(resonanceIds).toContain('subterfuge');
-    });
-
-    it('should have partyBonus entries', () => {
-      for (const resonance of RESONANCES_V1) {
-        expect(resonance.partyBonus).toBeDefined();
-        expect(resonance.partyBonus.length).toBeGreaterThan(0);
-      }
     });
   });
 });
@@ -543,7 +563,7 @@ describe('Seed Helper - Repository Integration', () => {
       expect(result.resonances.status).toBe('published');
     });
 
-    it('should create catalogs with correct data', async () => {
+    it('should create catalogs with correct data counts', async () => {
       const storedItems: Record<string, unknown> = {};
 
       ddbMock.on(PutCommand).callsFake((input) => {

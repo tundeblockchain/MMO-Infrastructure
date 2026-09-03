@@ -3,13 +3,25 @@
  *
  * 48 skills (6 classes × 8 skills each).
  * All coefficients as decimals: 150% → 1.50, 15% → 0.15
- * NOTE: Thermal Shock MUST be kind='reaction' (not active)
+ *
+ * CRITICAL REQUIREMENTS:
+ * - Thermal Shock: kind='reaction', internalCooldownSeconds=1 (per target)
+ * - Execution: missing-HP scaling with boss cap 3.25 P
+ * - Sever: per-stack coefficients 1.50/2.00/2.60/3.30/4.20
+ * - Divine Intervention: anti-death + 2.50 P heal
+ * - Hunter's Mark: duration 8s
+ * - Remote Detonation: separate turret/drone/mine coeffs
+ * - Resource costs: use resourceEffects with isPercentOfMax where spec uses %
+ * - All skills have timing (castMs/activeMs/recoveryMs)
+ * - Stagger coefficients where applicable
+ * - PvP multipliers where applicable
  */
 
 import { SkillDefinition } from '../models';
 
 // =============================================================================
 // Vanguard Skills (Physical Power scaling)
+// Resource: Resolve (flat generation/consumption)
 // =============================================================================
 const VANGUARD_SKILLS: SkillDefinition[] = [
   {
@@ -17,10 +29,13 @@ const VANGUARD_SKILLS: SkillDefinition[] = [
     classId: 'vanguard',
     displayName: 'Cleaving Strike',
     description:
-      'A wide sweeping attack that cleaves through enemies, generating Resolve for each target hit.',
+      'A wide sweeping attack that cleaves through enemies, generating Resolve for each target hit (+8 per target).',
     kind: 'active',
     resourceId: null,
     resourceCost: 0,
+    resourceEffects: [
+      { resourceId: 'resolve', amount: 8, isPercentOfMax: false, perTargetBonus: 8 },
+    ],
     cooldownSeconds: 0,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -35,6 +50,9 @@ const VANGUARD_SKILLS: SkillDefinition[] = [
       ],
       element: 'physical',
     },
+    timing: { castMs: 0, activeMs: 400, recoveryMs: 200 },
+    stagger: { staggerPower: 15, canStagger: true },
+    pvpMultipliers: { damageMultiplier: 0.85 },
     unlockLevel: 1,
     iconPath: 'icons/skills/vanguard/cleaving_strike.png',
   },
@@ -43,7 +61,7 @@ const VANGUARD_SKILLS: SkillDefinition[] = [
     classId: 'vanguard',
     displayName: 'Shield Breaker',
     description:
-      'A devastating blow that sunders enemy defenses, applying armor break.',
+      'A devastating blow that sunders enemy defenses, applying 25% armor break for 6s.',
     kind: 'active',
     resourceId: null,
     resourceCost: 0,
@@ -63,6 +81,9 @@ const VANGUARD_SKILLS: SkillDefinition[] = [
       appliesStatus: 'armor_break',
       effectDuration: 6,
     },
+    timing: { castMs: 0, activeMs: 500, recoveryMs: 300 },
+    stagger: { staggerPower: 25, canStagger: true },
+    pvpMultipliers: { damageMultiplier: 0.80, durationMultiplier: 0.75 },
     unlockLevel: 4,
     iconPath: 'icons/skills/vanguard/shield_breaker.png',
   },
@@ -71,7 +92,7 @@ const VANGUARD_SKILLS: SkillDefinition[] = [
     classId: 'vanguard',
     displayName: 'Brace',
     description:
-      'Channel to significantly reduce incoming damage while braced, but movement is slowed.',
+      'Channel to reduce incoming damage by 60% while braced, but movement is reduced by 30%. Cooldown starts after release.',
     kind: 'active',
     resourceId: null,
     resourceCost: 0,
@@ -85,6 +106,8 @@ const VANGUARD_SKILLS: SkillDefinition[] = [
       basePower: 0.60,
       scaling: [],
     },
+    timing: { castMs: 0, activeMs: 0, recoveryMs: 100 },
+    stagger: { staggerPower: 0, staggerResist: 0.50, canStagger: false },
     unlockLevel: 8,
     iconPath: 'icons/skills/vanguard/brace.png',
   },
@@ -93,10 +116,13 @@ const VANGUARD_SKILLS: SkillDefinition[] = [
     classId: 'vanguard',
     displayName: 'Counterblow',
     description:
-      'Counter an incoming attack. Perfect timing greatly increases damage dealt.',
+      'Counter an incoming attack. Perfect timing increases damage from 2.40 P to 3.20 P.',
     kind: 'active',
     resourceId: 'resolve',
     resourceCost: 20,
+    resourceEffects: [
+      { resourceId: 'resolve', amount: -20, isPercentOfMax: false },
+    ],
     cooldownSeconds: 4,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -110,7 +136,20 @@ const VANGUARD_SKILLS: SkillDefinition[] = [
         { stat: 'strength', coefficient: 1.00 },
       ],
       element: 'physical',
+      conditionals: [
+        {
+          condition: 'perfect_timing',
+          basePower: 3.20,
+          scaling: [
+            { stat: 'attackPower', coefficient: 3.20 },
+            { stat: 'strength', coefficient: 1.40 },
+          ],
+        },
+      ],
     },
+    timing: { castMs: 0, activeMs: 200, recoveryMs: 400 },
+    stagger: { staggerPower: 30, canStagger: true },
+    pvpMultipliers: { damageMultiplier: 0.75 },
     unlockLevel: 12,
     iconPath: 'icons/skills/vanguard/counterblow.png',
   },
@@ -135,6 +174,9 @@ const VANGUARD_SKILLS: SkillDefinition[] = [
       appliesStatus: 'taunt',
       effectDuration: 6,
     },
+    timing: { castMs: 0, activeMs: 300, recoveryMs: 200 },
+    stagger: { staggerPower: 0, canStagger: false },
+    pvpMultipliers: { durationMultiplier: 0.50 },
     unlockLevel: 16,
     iconPath: 'icons/skills/vanguard/war_cry.png',
   },
@@ -147,6 +189,9 @@ const VANGUARD_SKILLS: SkillDefinition[] = [
     kind: 'active',
     resourceId: 'resolve',
     resourceCost: 35,
+    resourceEffects: [
+      { resourceId: 'resolve', amount: -35, isPercentOfMax: false },
+    ],
     cooldownSeconds: 10,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -163,6 +208,9 @@ const VANGUARD_SKILLS: SkillDefinition[] = [
       appliesStatus: 'stagger',
       effectDuration: 2,
     },
+    timing: { castMs: 200, activeMs: 400, recoveryMs: 400 },
+    stagger: { staggerPower: 50, canStagger: true },
+    pvpMultipliers: { damageMultiplier: 0.70, durationMultiplier: 0.50 },
     unlockLevel: 22,
     iconPath: 'icons/skills/vanguard/earthshatter.png',
   },
@@ -171,11 +219,12 @@ const VANGUARD_SKILLS: SkillDefinition[] = [
     classId: 'vanguard',
     displayName: 'Unbreakable',
     description:
-      'When falling below 30% HP, gain damage reduction and stagger resistance for 8 seconds. Internal cooldown: 30s.',
+      'Passive: Below 30% HP, gain 15% damage reduction and 40% stagger resistance for 8s. Internal cooldown: 30s.',
     kind: 'passive',
     resourceId: null,
     resourceCost: 0,
     cooldownSeconds: 30,
+    internalCooldownSeconds: 30,
     charges: 1,
     chargeRechargeSeconds: 0,
     castTimeSeconds: 0,
@@ -184,7 +233,16 @@ const VANGUARD_SKILLS: SkillDefinition[] = [
     coefficients: {
       basePower: 0.15,
       scaling: [],
+      conditionals: [
+        {
+          condition: 'below_hp_threshold',
+          threshold: 0.30,
+          damageMultiplier: 0.85,
+        },
+      ],
     },
+    timing: { castMs: 0, activeMs: 0, recoveryMs: 0 },
+    stagger: { staggerPower: 0, staggerResist: 0.40, canStagger: false },
     unlockLevel: 30,
     iconPath: 'icons/skills/vanguard/unbreakable.png',
   },
@@ -196,6 +254,9 @@ const VANGUARD_SKILLS: SkillDefinition[] = [
     kind: 'active',
     resourceId: 'resolve',
     resourceCost: 15,
+    resourceEffects: [
+      { resourceId: 'resolve', amount: -15, isPercentOfMax: false },
+    ],
     cooldownSeconds: 12,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -210,6 +271,9 @@ const VANGUARD_SKILLS: SkillDefinition[] = [
       ],
       element: 'physical',
     },
+    timing: { castMs: 0, activeMs: 600, recoveryMs: 200 },
+    stagger: { staggerPower: 35, canStagger: true },
+    pvpMultipliers: { damageMultiplier: 0.80 },
     unlockLevel: 40,
     iconPath: 'icons/skills/vanguard/overrun.png',
   },
@@ -217,6 +281,7 @@ const VANGUARD_SKILLS: SkillDefinition[] = [
 
 // =============================================================================
 // Ranger Skills (Physical Power scaling)
+// Resource: Focus (flat generation/consumption)
 // =============================================================================
 const RANGER_SKILLS: SkillDefinition[] = [
   {
@@ -242,6 +307,9 @@ const RANGER_SKILLS: SkillDefinition[] = [
       ],
       element: 'physical',
     },
+    timing: { castMs: 0, activeMs: 200, recoveryMs: 100 },
+    stagger: { staggerPower: 5, canStagger: true },
+    pvpMultipliers: { damageMultiplier: 0.90 },
     unlockLevel: 1,
     iconPath: 'icons/skills/ranger/quickshot.png',
   },
@@ -250,7 +318,7 @@ const RANGER_SKILLS: SkillDefinition[] = [
     classId: 'ranger',
     displayName: "Hunter's Mark",
     description:
-      'Mark a target, increasing damage taken and enabling Mark-empowered abilities.',
+      'Mark a target for 8s, increasing damage taken and enabling Mark-empowered abilities.',
     kind: 'active',
     resourceId: null,
     resourceCost: 0,
@@ -264,8 +332,11 @@ const RANGER_SKILLS: SkillDefinition[] = [
       basePower: 0,
       scaling: [],
       appliesStatus: 'mark',
-      effectDuration: 12,
+      effectDuration: 8,
     },
+    timing: { castMs: 0, activeMs: 100, recoveryMs: 100 },
+    stagger: { staggerPower: 0, canStagger: false },
+    pvpMultipliers: { durationMultiplier: 0.75 },
     unlockLevel: 4,
     iconPath: 'icons/skills/ranger/hunters_mark.png',
   },
@@ -274,10 +345,13 @@ const RANGER_SKILLS: SkillDefinition[] = [
     classId: 'ranger',
     displayName: 'Piercing Shot',
     description:
-      'Fire a powerful shot that pierces through enemies. Deals increased damage to Marked targets.',
+      'Fire a powerful shot that pierces through enemies. Marked targets: 3.00 P + 1.40 PRE.',
     kind: 'active',
     resourceId: 'focus',
     resourceCost: 40,
+    resourceEffects: [
+      { resourceId: 'focus', amount: -40, isPercentOfMax: false },
+    ],
     cooldownSeconds: 8,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -291,7 +365,20 @@ const RANGER_SKILLS: SkillDefinition[] = [
         { stat: 'precision', coefficient: 1.00 },
       ],
       element: 'physical',
+      conditionals: [
+        {
+          condition: 'marked',
+          basePower: 3.00,
+          scaling: [
+            { stat: 'attackPower', coefficient: 3.00 },
+            { stat: 'precision', coefficient: 1.40 },
+          ],
+        },
+      ],
     },
+    timing: { castMs: 800, activeMs: 100, recoveryMs: 300 },
+    stagger: { staggerPower: 20, canStagger: true },
+    pvpMultipliers: { damageMultiplier: 0.75 },
     unlockLevel: 8,
     iconPath: 'icons/skills/ranger/piercing_shot.png',
   },
@@ -304,6 +391,9 @@ const RANGER_SKILLS: SkillDefinition[] = [
     kind: 'active',
     resourceId: 'focus',
     resourceCost: 25,
+    resourceEffects: [
+      { resourceId: 'focus', amount: -25, isPercentOfMax: false },
+    ],
     cooldownSeconds: 7,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -318,6 +408,9 @@ const RANGER_SKILLS: SkillDefinition[] = [
       ],
       element: 'physical',
     },
+    timing: { castMs: 0, activeMs: 300, recoveryMs: 300 },
+    stagger: { staggerPower: 10, canStagger: true },
+    pvpMultipliers: { damageMultiplier: 0.80 },
     unlockLevel: 12,
     iconPath: 'icons/skills/ranger/scattershot.png',
   },
@@ -339,6 +432,8 @@ const RANGER_SKILLS: SkillDefinition[] = [
       basePower: 0,
       scaling: [],
     },
+    timing: { castMs: 0, activeMs: 300, recoveryMs: 100 },
+    stagger: { staggerPower: 0, canStagger: false },
     unlockLevel: 16,
     iconPath: 'icons/skills/ranger/evade.png',
   },
@@ -350,6 +445,9 @@ const RANGER_SKILLS: SkillDefinition[] = [
     kind: 'active',
     resourceId: 'focus',
     resourceCost: 20,
+    resourceEffects: [
+      { resourceId: 'focus', amount: -20, isPercentOfMax: false },
+    ],
     cooldownSeconds: 12,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -366,6 +464,9 @@ const RANGER_SKILLS: SkillDefinition[] = [
       appliesStatus: 'immobilize',
       effectDuration: 3,
     },
+    timing: { castMs: 0, activeMs: 200, recoveryMs: 200 },
+    stagger: { staggerPower: 15, canStagger: true },
+    pvpMultipliers: { damageMultiplier: 0.85, durationMultiplier: 0.50 },
     unlockLevel: 22,
     iconPath: 'icons/skills/ranger/pinning_arrow.png',
   },
@@ -374,10 +475,13 @@ const RANGER_SKILLS: SkillDefinition[] = [
     classId: 'ranger',
     displayName: 'Dead Focus',
     description:
-      'Enter a focused stance that drains Focus but greatly increases damage and accuracy.',
+      'Enter a focused stance that drains Focus but greatly increases damage and accuracy. Cooldown starts after exit.',
     kind: 'active',
     resourceId: 'focus',
     resourceCost: 0,
+    resourceEffects: [
+      { resourceId: 'focus', amount: -0.05, isPercentOfMax: true },
+    ],
     cooldownSeconds: 4,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -389,6 +493,9 @@ const RANGER_SKILLS: SkillDefinition[] = [
       scaling: [],
       appliesStatus: 'dead_focus',
     },
+    timing: { castMs: 0, activeMs: 0, recoveryMs: 100 },
+    stagger: { staggerPower: 0, canStagger: false },
+    pvpMultipliers: { damageMultiplier: 0.80 },
     unlockLevel: 30,
     iconPath: 'icons/skills/ranger/dead_focus.png',
   },
@@ -397,7 +504,7 @@ const RANGER_SKILLS: SkillDefinition[] = [
     classId: 'ranger',
     displayName: "Predator's Instinct",
     description:
-      'Passively increases critical hit chance against Marked targets and reveals stealthed enemies.',
+      'Passive: Increases critical hit chance against Marked targets and reveals stealthed enemies.',
     kind: 'passive',
     resourceId: null,
     resourceCost: 0,
@@ -410,7 +517,15 @@ const RANGER_SKILLS: SkillDefinition[] = [
     coefficients: {
       basePower: 0,
       scaling: [],
+      conditionals: [
+        {
+          condition: 'marked',
+          damageMultiplier: 1.15,
+        },
+      ],
     },
+    timing: { castMs: 0, activeMs: 0, recoveryMs: 0 },
+    stagger: { staggerPower: 0, canStagger: false },
     unlockLevel: 40,
     iconPath: 'icons/skills/ranger/predators_instinct.png',
   },
@@ -418,7 +533,8 @@ const RANGER_SKILLS: SkillDefinition[] = [
 
 // =============================================================================
 // Arcanist Skills (Spell Power scaling)
-// NOTE: Thermal Shock is kind='reaction' (NOT active)
+// Resource: Mana (% of max for costs)
+// NOTE: Thermal Shock is kind='reaction' with internalCooldownSeconds=1
 // =============================================================================
 const ARCANIST_SKILLS: SkillDefinition[] = [
   {
@@ -429,7 +545,10 @@ const ARCANIST_SKILLS: SkillDefinition[] = [
       'Launch a searing lance of flame that burns the target, applying Flame status.',
     kind: 'active',
     resourceId: 'mana',
-    resourceCost: 15,
+    resourceCost: 10,
+    resourceEffects: [
+      { resourceId: 'mana', amount: -0.10, isPercentOfMax: true },
+    ],
     cooldownSeconds: 2,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -446,6 +565,9 @@ const ARCANIST_SKILLS: SkillDefinition[] = [
       appliesStatus: 'flame',
       effectDuration: 6,
     },
+    timing: { castMs: 500, activeMs: 100, recoveryMs: 200 },
+    stagger: { staggerPower: 10, canStagger: true },
+    pvpMultipliers: { damageMultiplier: 0.85 },
     unlockLevel: 1,
     iconPath: 'icons/skills/arcanist/ember_lance.png',
   },
@@ -457,7 +579,10 @@ const ARCANIST_SKILLS: SkillDefinition[] = [
       'Conjure icy chains that damage and slow the target, applying Frost status.',
     kind: 'active',
     resourceId: 'mana',
-    resourceCost: 20,
+    resourceCost: 12,
+    resourceEffects: [
+      { resourceId: 'mana', amount: -0.12, isPercentOfMax: true },
+    ],
     cooldownSeconds: 6,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -474,6 +599,9 @@ const ARCANIST_SKILLS: SkillDefinition[] = [
       appliesStatus: 'frost',
       effectDuration: 4,
     },
+    timing: { castMs: 500, activeMs: 100, recoveryMs: 200 },
+    stagger: { staggerPower: 15, canStagger: true },
+    pvpMultipliers: { damageMultiplier: 0.85, durationMultiplier: 0.75 },
     unlockLevel: 4,
     iconPath: 'icons/skills/arcanist/frostbind.png',
   },
@@ -485,7 +613,10 @@ const ARCANIST_SKILLS: SkillDefinition[] = [
       'Release a surge of lightning that chains to up to 4 nearby enemies.',
     kind: 'active',
     resourceId: 'mana',
-    resourceCost: 30,
+    resourceCost: 18,
+    resourceEffects: [
+      { resourceId: 'mana', amount: -0.18, isPercentOfMax: true },
+    ],
     cooldownSeconds: 8,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -502,6 +633,9 @@ const ARCANIST_SKILLS: SkillDefinition[] = [
       appliesStatus: 'shock',
       effectDuration: 3,
     },
+    timing: { castMs: 800, activeMs: 200, recoveryMs: 300 },
+    stagger: { staggerPower: 20, canStagger: true },
+    pvpMultipliers: { damageMultiplier: 0.80 },
     unlockLevel: 8,
     iconPath: 'icons/skills/arcanist/arc_surge.png',
   },
@@ -512,7 +646,10 @@ const ARCANIST_SKILLS: SkillDefinition[] = [
     description: 'Fire a bolt of pure arcane energy with a short cooldown.',
     kind: 'active',
     resourceId: 'mana',
-    resourceCost: 10,
+    resourceCost: 6,
+    resourceEffects: [
+      { resourceId: 'mana', amount: -0.06, isPercentOfMax: true },
+    ],
     cooldownSeconds: 1,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -527,6 +664,9 @@ const ARCANIST_SKILLS: SkillDefinition[] = [
       ],
       element: 'arcane',
     },
+    timing: { castMs: 300, activeMs: 100, recoveryMs: 100 },
+    stagger: { staggerPower: 5, canStagger: true },
+    pvpMultipliers: { damageMultiplier: 0.90 },
     unlockLevel: 12,
     iconPath: 'icons/skills/arcanist/aether_bolt.png',
   },
@@ -540,6 +680,7 @@ const ARCANIST_SKILLS: SkillDefinition[] = [
     resourceId: null,
     resourceCost: 0,
     cooldownSeconds: 0,
+    internalCooldownSeconds: 1,
     charges: 1,
     chargeRechargeSeconds: 0,
     castTimeSeconds: 0,
@@ -553,6 +694,9 @@ const ARCANIST_SKILLS: SkillDefinition[] = [
       ],
       element: 'arcane',
     },
+    timing: { castMs: 0, activeMs: 100, recoveryMs: 100 },
+    stagger: { staggerPower: 30, canStagger: true },
+    pvpMultipliers: { damageMultiplier: 0.70 },
     unlockLevel: 16,
     iconPath: 'icons/skills/arcanist/thermal_shock.png',
   },
@@ -563,7 +707,10 @@ const ARCANIST_SKILLS: SkillDefinition[] = [
     description: 'Teleport a short distance in the target direction.',
     kind: 'active',
     resourceId: 'mana',
-    resourceCost: 25,
+    resourceCost: 15,
+    resourceEffects: [
+      { resourceId: 'mana', amount: -0.15, isPercentOfMax: true },
+    ],
     cooldownSeconds: 10,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -574,6 +721,8 @@ const ARCANIST_SKILLS: SkillDefinition[] = [
       basePower: 0,
       scaling: [],
     },
+    timing: { castMs: 0, activeMs: 100, recoveryMs: 100 },
+    stagger: { staggerPower: 0, canStagger: false },
     unlockLevel: 22,
     iconPath: 'icons/skills/arcanist/phase_step.png',
   },
@@ -586,6 +735,9 @@ const ARCANIST_SKILLS: SkillDefinition[] = [
     kind: 'active',
     resourceId: null,
     resourceCost: 0,
+    resourceEffects: [
+      { resourceId: 'mana', amount: 0.08, isPercentOfMax: true },
+    ],
     cooldownSeconds: 18,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -596,6 +748,8 @@ const ARCANIST_SKILLS: SkillDefinition[] = [
       basePower: 0,
       scaling: [],
     },
+    timing: { castMs: 0, activeMs: 3000, recoveryMs: 200 },
+    stagger: { staggerPower: 0, canStagger: false },
     unlockLevel: 30,
     iconPath: 'icons/skills/arcanist/mana_conduit.png',
   },
@@ -604,7 +758,7 @@ const ARCANIST_SKILLS: SkillDefinition[] = [
     classId: 'arcanist',
     displayName: 'Elemental Mastery',
     description:
-      'Passive: Increases all elemental damage dealt and reduces elemental damage taken.',
+      'Passive: Increases all elemental damage dealt by 15% and reduces elemental damage taken by 10%.',
     kind: 'passive',
     resourceId: null,
     resourceCost: 0,
@@ -618,6 +772,8 @@ const ARCANIST_SKILLS: SkillDefinition[] = [
       basePower: 0.15,
       scaling: [],
     },
+    timing: { castMs: 0, activeMs: 0, recoveryMs: 0 },
+    stagger: { staggerPower: 0, canStagger: false },
     unlockLevel: 40,
     iconPath: 'icons/skills/arcanist/elemental_mastery.png',
   },
@@ -625,6 +781,7 @@ const ARCANIST_SKILLS: SkillDefinition[] = [
 
 // =============================================================================
 // Machinist Skills (Tech/Device Power scaling)
+// Resource: Charge (flat generation/consumption)
 // =============================================================================
 const MACHINIST_SKILLS: SkillDefinition[] = [
   {
@@ -636,6 +793,9 @@ const MACHINIST_SKILLS: SkillDefinition[] = [
     kind: 'active',
     resourceId: 'charge',
     resourceCost: 30,
+    resourceEffects: [
+      { resourceId: 'charge', amount: -30, isPercentOfMax: false },
+    ],
     cooldownSeconds: 12,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -645,11 +805,14 @@ const MACHINIST_SKILLS: SkillDefinition[] = [
     coefficients: {
       basePower: 0.45,
       scaling: [
-        { stat: 'techPower', coefficient: 0.45 },
+        { stat: 'devicePower', coefficient: 0.45 },
         { stat: 'precision', coefficient: 0.15 },
       ],
       element: 'physical',
     },
+    timing: { castMs: 500, activeMs: 200, recoveryMs: 200 },
+    stagger: { staggerPower: 5, canStagger: true },
+    pvpMultipliers: { damageMultiplier: 0.75 },
     unlockLevel: 1,
     iconPath: 'icons/skills/machinist/auto_turret.png',
   },
@@ -662,6 +825,9 @@ const MACHINIST_SKILLS: SkillDefinition[] = [
     kind: 'active',
     resourceId: 'charge',
     resourceCost: 35,
+    resourceEffects: [
+      { resourceId: 'charge', amount: -35, isPercentOfMax: false },
+    ],
     cooldownSeconds: 18,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -671,11 +837,14 @@ const MACHINIST_SKILLS: SkillDefinition[] = [
     coefficients: {
       basePower: 0.38,
       scaling: [
-        { stat: 'techPower', coefficient: 0.38 },
+        { stat: 'devicePower', coefficient: 0.38 },
         { stat: 'precision', coefficient: 0.12 },
       ],
       element: 'physical',
     },
+    timing: { castMs: 300, activeMs: 100, recoveryMs: 100 },
+    stagger: { staggerPower: 3, canStagger: true },
+    pvpMultipliers: { damageMultiplier: 0.70 },
     unlockLevel: 4,
     iconPath: 'icons/skills/machinist/assault_drone.png',
   },
@@ -688,6 +857,9 @@ const MACHINIST_SKILLS: SkillDefinition[] = [
     kind: 'active',
     resourceId: 'charge',
     resourceCost: 20,
+    resourceEffects: [
+      { resourceId: 'charge', amount: -20, isPercentOfMax: false },
+    ],
     cooldownSeconds: 6,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -702,6 +874,9 @@ const MACHINIST_SKILLS: SkillDefinition[] = [
       ],
       element: 'lightning',
     },
+    timing: { castMs: 0, activeMs: 300, recoveryMs: 200 },
+    stagger: { staggerPower: 25, canStagger: true },
+    pvpMultipliers: { damageMultiplier: 0.75 },
     unlockLevel: 8,
     iconPath: 'icons/skills/machinist/pulse_mine.png',
   },
@@ -714,6 +889,9 @@ const MACHINIST_SKILLS: SkillDefinition[] = [
     kind: 'active',
     resourceId: 'charge',
     resourceCost: 20,
+    resourceEffects: [
+      { resourceId: 'charge', amount: -20, isPercentOfMax: false },
+    ],
     cooldownSeconds: 20,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -726,6 +904,9 @@ const MACHINIST_SKILLS: SkillDefinition[] = [
       appliesStatus: 'overclock',
       effectDuration: 8,
     },
+    timing: { castMs: 0, activeMs: 100, recoveryMs: 100 },
+    stagger: { staggerPower: 0, canStagger: false },
+    pvpMultipliers: { durationMultiplier: 0.75 },
     unlockLevel: 12,
     iconPath: 'icons/skills/machinist/overclock.png',
   },
@@ -738,6 +919,9 @@ const MACHINIST_SKILLS: SkillDefinition[] = [
     kind: 'active',
     resourceId: 'charge',
     resourceCost: 15,
+    resourceEffects: [
+      { resourceId: 'charge', amount: -15, isPercentOfMax: false },
+    ],
     cooldownSeconds: 8,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -747,10 +931,13 @@ const MACHINIST_SKILLS: SkillDefinition[] = [
     coefficients: {
       basePower: 0.60,
       scaling: [
-        { stat: 'techPower', coefficient: 0.60 },
+        { stat: 'healingPower', coefficient: 0.60 },
         { stat: 'tech', coefficient: 0.30 },
       ],
     },
+    timing: { castMs: 0, activeMs: 100, recoveryMs: 100 },
+    stagger: { staggerPower: 0, canStagger: false },
+    pvpMultipliers: { healingMultiplier: 0.70 },
     unlockLevel: 16,
     iconPath: 'icons/skills/machinist/repair_protocol.png',
   },
@@ -763,6 +950,9 @@ const MACHINIST_SKILLS: SkillDefinition[] = [
     kind: 'active',
     resourceId: 'charge',
     resourceCost: 25,
+    resourceEffects: [
+      { resourceId: 'charge', amount: -25, isPercentOfMax: false },
+    ],
     cooldownSeconds: 14,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -776,6 +966,9 @@ const MACHINIST_SKILLS: SkillDefinition[] = [
       appliesStatus: 'snare',
       effectDuration: 4,
     },
+    timing: { castMs: 0, activeMs: 200, recoveryMs: 200 },
+    stagger: { staggerPower: 10, canStagger: true },
+    pvpMultipliers: { damageMultiplier: 0.85, durationMultiplier: 0.50 },
     unlockLevel: 22,
     iconPath: 'icons/skills/machinist/shock_net.png',
   },
@@ -788,6 +981,9 @@ const MACHINIST_SKILLS: SkillDefinition[] = [
     kind: 'passive',
     resourceId: null,
     resourceCost: 0,
+    resourceEffects: [
+      { resourceId: 'charge', amount: 10, isPercentOfMax: false },
+    ],
     cooldownSeconds: 0,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -798,6 +994,8 @@ const MACHINIST_SKILLS: SkillDefinition[] = [
       basePower: 0,
       scaling: [],
     },
+    timing: { castMs: 0, activeMs: 0, recoveryMs: 0 },
+    stagger: { staggerPower: 0, canStagger: false },
     unlockLevel: 30,
     iconPath: 'icons/skills/machinist/salvage.png',
   },
@@ -817,10 +1015,27 @@ const MACHINIST_SKILLS: SkillDefinition[] = [
     castableWhileMoving: true,
     range: 40,
     coefficients: {
-      basePower: 2.40,
-      scaling: [{ stat: 'techPower', coefficient: 2.40 }],
+      basePower: 1.10,
+      scaling: [{ stat: 'devicePower', coefficient: 1.10 }],
       element: 'fire',
+      targetVariants: {
+        turret: {
+          basePower: 1.10,
+          scaling: [{ stat: 'devicePower', coefficient: 1.10 }],
+        },
+        drone: {
+          basePower: 1.40,
+          scaling: [{ stat: 'devicePower', coefficient: 1.40 }],
+        },
+        mine: {
+          basePower: 2.40,
+          scaling: [{ stat: 'devicePower', coefficient: 2.40 }],
+        },
+      },
     },
+    timing: { castMs: 0, activeMs: 100, recoveryMs: 200 },
+    stagger: { staggerPower: 40, canStagger: true },
+    pvpMultipliers: { damageMultiplier: 0.70 },
     unlockLevel: 40,
     iconPath: 'icons/skills/machinist/remote_detonation.png',
   },
@@ -828,6 +1043,7 @@ const MACHINIST_SKILLS: SkillDefinition[] = [
 
 // =============================================================================
 // Warden Skills (Spell Power / Healing Power scaling)
+// Resources: Radiance + Judgement (flat generation/consumption)
 // =============================================================================
 const WARDEN_SKILLS: SkillDefinition[] = [
   {
@@ -835,10 +1051,13 @@ const WARDEN_SKILLS: SkillDefinition[] = [
     classId: 'warden',
     displayName: 'Radiant Strike',
     description:
-      'Strike with divine light, dealing damage and generating Radiance.',
+      'Strike with divine light, dealing damage and generating +15 Radiance.',
     kind: 'active',
     resourceId: null,
     resourceCost: 0,
+    resourceEffects: [
+      { resourceId: 'radiance', amount: 15, isPercentOfMax: false },
+    ],
     cooldownSeconds: 2,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -853,6 +1072,9 @@ const WARDEN_SKILLS: SkillDefinition[] = [
       ],
       element: 'radiant',
     },
+    timing: { castMs: 0, activeMs: 350, recoveryMs: 200 },
+    stagger: { staggerPower: 12, canStagger: true },
+    pvpMultipliers: { damageMultiplier: 0.85 },
     unlockLevel: 1,
     iconPath: 'icons/skills/warden/radiant_strike.png',
   },
@@ -860,10 +1082,13 @@ const WARDEN_SKILLS: SkillDefinition[] = [
     skillId: 'warden_mend',
     classId: 'warden',
     displayName: 'Mend',
-    description: 'Channel healing light to restore health to an ally, generating Judgement.',
+    description: 'Channel healing light to restore health to an ally, generating +15 Judgement.',
     kind: 'active',
     resourceId: null,
     resourceCost: 0,
+    resourceEffects: [
+      { resourceId: 'judgement', amount: 15, isPercentOfMax: false },
+    ],
     cooldownSeconds: 3,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -873,10 +1098,13 @@ const WARDEN_SKILLS: SkillDefinition[] = [
     coefficients: {
       basePower: 1.70,
       scaling: [
-        { stat: 'spellPower', coefficient: 1.70 },
+        { stat: 'healingPower', coefficient: 1.70 },
         { stat: 'intellect', coefficient: 0.50 },
       ],
     },
+    timing: { castMs: 500, activeMs: 100, recoveryMs: 200 },
+    stagger: { staggerPower: 0, canStagger: false },
+    pvpMultipliers: { healingMultiplier: 0.70 },
     unlockLevel: 4,
     iconPath: 'icons/skills/warden/mend.png',
   },
@@ -885,10 +1113,13 @@ const WARDEN_SKILLS: SkillDefinition[] = [
     classId: 'warden',
     displayName: 'Sanctuary',
     description:
-      'Create a field of healing light that restores health to allies within over time.',
+      'Create a field of healing light that restores health to allies within over time. Costs 30 Radiance.',
     kind: 'active',
     resourceId: 'radiance',
     resourceCost: 30,
+    resourceEffects: [
+      { resourceId: 'radiance', amount: -30, isPercentOfMax: false },
+    ],
     cooldownSeconds: 18,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -898,12 +1129,15 @@ const WARDEN_SKILLS: SkillDefinition[] = [
     coefficients: {
       basePower: 2.40,
       scaling: [
-        { stat: 'spellPower', coefficient: 2.40 },
+        { stat: 'healingPower', coefficient: 2.40 },
         { stat: 'intellect', coefficient: 0.80 },
       ],
       appliesStatus: 'sanctuary',
       effectDuration: 8,
     },
+    timing: { castMs: 1000, activeMs: 200, recoveryMs: 300 },
+    stagger: { staggerPower: 0, canStagger: false },
+    pvpMultipliers: { healingMultiplier: 0.65, durationMultiplier: 0.75 },
     unlockLevel: 8,
     iconPath: 'icons/skills/warden/sanctuary.png',
   },
@@ -912,10 +1146,13 @@ const WARDEN_SKILLS: SkillDefinition[] = [
     classId: 'warden',
     displayName: 'Condemn',
     description:
-      'Pass divine judgment on an enemy, dealing radiant damage and consuming Judgement.',
+      'Pass divine judgment on an enemy, dealing radiant damage. Costs 25 Judgement.',
     kind: 'active',
     resourceId: 'judgement',
     resourceCost: 25,
+    resourceEffects: [
+      { resourceId: 'judgement', amount: -25, isPercentOfMax: false },
+    ],
     cooldownSeconds: 10,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -930,6 +1167,9 @@ const WARDEN_SKILLS: SkillDefinition[] = [
       ],
       element: 'radiant',
     },
+    timing: { castMs: 800, activeMs: 100, recoveryMs: 300 },
+    stagger: { staggerPower: 20, canStagger: true },
+    pvpMultipliers: { damageMultiplier: 0.80 },
     unlockLevel: 12,
     iconPath: 'icons/skills/warden/condemn.png',
   },
@@ -938,10 +1178,14 @@ const WARDEN_SKILLS: SkillDefinition[] = [
     classId: 'warden',
     displayName: 'Guardian Light',
     description:
-      'Shield an ally with protective light, absorbing damage based on max HP and healing power.',
+      'Shield an ally with protective light, absorbing damage based on max HP and healing power. Costs 25 Radiance + 15 Judgement.',
     kind: 'active',
     resourceId: 'radiance',
     resourceCost: 25,
+    resourceEffects: [
+      { resourceId: 'radiance', amount: -25, isPercentOfMax: false },
+      { resourceId: 'judgement', amount: -15, isPercentOfMax: false },
+    ],
     cooldownSeconds: 12,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -952,11 +1196,14 @@ const WARDEN_SKILLS: SkillDefinition[] = [
       basePower: 0.10,
       scaling: [
         { stat: 'maxHp', coefficient: 0.10 },
-        { stat: 'spellPower', coefficient: 0.70 },
+        { stat: 'healingPower', coefficient: 0.70 },
       ],
       appliesStatus: 'guardian_light',
       effectDuration: 6,
     },
+    timing: { castMs: 0, activeMs: 100, recoveryMs: 100 },
+    stagger: { staggerPower: 0, canStagger: false },
+    pvpMultipliers: { healingMultiplier: 0.70, durationMultiplier: 0.75 },
     unlockLevel: 16,
     iconPath: 'icons/skills/warden/guardian_light.png',
   },
@@ -965,10 +1212,14 @@ const WARDEN_SKILLS: SkillDefinition[] = [
     classId: 'warden',
     displayName: 'Equilibrium',
     description:
-      'Balance Radiance and Judgement, consuming both to empower your next ability significantly.',
+      'Balance Radiance and Judgement, consuming 50 of each to empower your next ability significantly.',
     kind: 'active',
     resourceId: 'radiance',
     resourceCost: 50,
+    resourceEffects: [
+      { resourceId: 'radiance', amount: -50, isPercentOfMax: false },
+      { resourceId: 'judgement', amount: -50, isPercentOfMax: false },
+    ],
     cooldownSeconds: 45,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -981,6 +1232,9 @@ const WARDEN_SKILLS: SkillDefinition[] = [
       appliesStatus: 'equilibrium',
       effectDuration: 10,
     },
+    timing: { castMs: 0, activeMs: 100, recoveryMs: 100 },
+    stagger: { staggerPower: 0, canStagger: false },
+    pvpMultipliers: { durationMultiplier: 0.80 },
     unlockLevel: 22,
     iconPath: 'icons/skills/warden/equilibrium.png',
   },
@@ -989,10 +1243,13 @@ const WARDEN_SKILLS: SkillDefinition[] = [
     classId: 'warden',
     displayName: 'Divine Intervention',
     description:
-      'Call upon divine power to prevent an ally from dying, restoring them to a portion of their max health.',
+      'Call upon divine power to prevent an ally from dying, granting anti-death and healing 2.50 P. Costs 40 Judgement.',
     kind: 'active',
     resourceId: 'judgement',
     resourceCost: 40,
+    resourceEffects: [
+      { resourceId: 'judgement', amount: -40, isPercentOfMax: false },
+    ],
     cooldownSeconds: 120,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -1000,9 +1257,16 @@ const WARDEN_SKILLS: SkillDefinition[] = [
     castableWhileMoving: true,
     range: 40,
     coefficients: {
-      basePower: 0.30,
-      scaling: [{ stat: 'maxHp', coefficient: 0.30 }],
+      basePower: 2.50,
+      scaling: [
+        { stat: 'healingPower', coefficient: 2.50 },
+      ],
+      appliesStatus: 'divine_intervention',
+      effectDuration: 3,
     },
+    timing: { castMs: 0, activeMs: 100, recoveryMs: 100 },
+    stagger: { staggerPower: 0, canStagger: false },
+    pvpMultipliers: { healingMultiplier: 0.60, cooldownMultiplier: 1.50 },
     unlockLevel: 30,
     iconPath: 'icons/skills/warden/divine_intervention.png',
   },
@@ -1011,7 +1275,7 @@ const WARDEN_SKILLS: SkillDefinition[] = [
     classId: 'warden',
     displayName: 'Balance Within',
     description:
-      'Passive: Maintaining balanced Radiance and Judgement increases your healing and damage output.',
+      'Passive: Maintaining balanced Radiance and Judgement increases your healing and damage output by 10%.',
     kind: 'passive',
     resourceId: null,
     resourceCost: 0,
@@ -1025,6 +1289,8 @@ const WARDEN_SKILLS: SkillDefinition[] = [
       basePower: 0.10,
       scaling: [],
     },
+    timing: { castMs: 0, activeMs: 0, recoveryMs: 0 },
+    stagger: { staggerPower: 0, canStagger: false },
     unlockLevel: 40,
     iconPath: 'icons/skills/warden/balance_within.png',
   },
@@ -1032,6 +1298,7 @@ const WARDEN_SKILLS: SkillDefinition[] = [
 
 // =============================================================================
 // Shade Skills (Physical Power scaling)
+// Resource: Momentum (1-5 stacks, flat generation/consumption)
 // =============================================================================
 const SHADE_SKILLS: SkillDefinition[] = [
   {
@@ -1039,10 +1306,13 @@ const SHADE_SKILLS: SkillDefinition[] = [
     classId: 'shade',
     displayName: 'Razor Cut',
     description:
-      'A swift strike that generates Momentum. Can be chained rapidly.',
+      'A swift strike that generates +1 Momentum. Can be chained rapidly.',
     kind: 'active',
     resourceId: null,
     resourceCost: 0,
+    resourceEffects: [
+      { resourceId: 'momentum', amount: 1, isPercentOfMax: false },
+    ],
     cooldownSeconds: 1,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -1057,6 +1327,9 @@ const SHADE_SKILLS: SkillDefinition[] = [
       ],
       element: 'physical',
     },
+    timing: { castMs: 0, activeMs: 200, recoveryMs: 150 },
+    stagger: { staggerPower: 8, canStagger: true },
+    pvpMultipliers: { damageMultiplier: 0.90 },
     unlockLevel: 1,
     iconPath: 'icons/skills/shade/razor_cut.png',
   },
@@ -1078,6 +1351,8 @@ const SHADE_SKILLS: SkillDefinition[] = [
       basePower: 0,
       scaling: [],
     },
+    timing: { castMs: 0, activeMs: 100, recoveryMs: 100 },
+    stagger: { staggerPower: 0, canStagger: false },
     unlockLevel: 4,
     iconPath: 'icons/skills/shade/shadowstep.png',
   },
@@ -1086,10 +1361,13 @@ const SHADE_SKILLS: SkillDefinition[] = [
     classId: 'shade',
     displayName: 'Venom Edge',
     description:
-      'Apply venom to your weapon. The 5th stack triggers a devastating poison burst.',
+      'Apply venom to your weapon. The 5th stack triggers a devastating poison burst: 1.80 P + 0.80 LCK DoT. Costs 1 Momentum.',
     kind: 'active',
     resourceId: 'momentum',
     resourceCost: 1,
+    resourceEffects: [
+      { resourceId: 'momentum', amount: -1, isPercentOfMax: false },
+    ],
     cooldownSeconds: 14,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -1106,6 +1384,9 @@ const SHADE_SKILLS: SkillDefinition[] = [
       appliesStatus: 'venom',
       effectDuration: 12,
     },
+    timing: { castMs: 0, activeMs: 200, recoveryMs: 200 },
+    stagger: { staggerPower: 5, canStagger: true },
+    pvpMultipliers: { damageMultiplier: 0.80, durationMultiplier: 0.75 },
     unlockLevel: 8,
     iconPath: 'icons/skills/shade/venom_edge.png',
   },
@@ -1114,10 +1395,13 @@ const SHADE_SKILLS: SkillDefinition[] = [
     classId: 'shade',
     displayName: 'Smoke Veil',
     description:
-      'Vanish in a cloud of smoke, becoming invisible and untargetable briefly.',
+      'Vanish in a cloud of smoke, becoming invisible and untargetable briefly. Costs 2 Momentum.',
     kind: 'active',
     resourceId: 'momentum',
     resourceCost: 2,
+    resourceEffects: [
+      { resourceId: 'momentum', amount: -2, isPercentOfMax: false },
+    ],
     cooldownSeconds: 20,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -1130,6 +1414,9 @@ const SHADE_SKILLS: SkillDefinition[] = [
       appliesStatus: 'stealth',
       effectDuration: 4,
     },
+    timing: { castMs: 0, activeMs: 100, recoveryMs: 100 },
+    stagger: { staggerPower: 0, canStagger: false },
+    pvpMultipliers: { durationMultiplier: 0.75 },
     unlockLevel: 12,
     iconPath: 'icons/skills/shade/smoke_veil.png',
   },
@@ -1138,10 +1425,13 @@ const SHADE_SKILLS: SkillDefinition[] = [
     classId: 'shade',
     displayName: 'Sever',
     description:
-      'Spend all Momentum to deliver a devastating strike. Damage scales with Momentum consumed: 1.50/2.00/2.60/3.30/4.20 P.',
+      'Spend all Momentum to deliver a devastating strike. Per-stack damage: 1.50/2.00/2.60/3.30/4.20 P + 0.40 FIN/stack.',
     kind: 'active',
     resourceId: 'momentum',
     resourceCost: 1,
+    resourceEffects: [
+      { resourceId: 'momentum', amount: -5, isPercentOfMax: false },
+    ],
     cooldownSeconds: 6,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -1155,7 +1445,20 @@ const SHADE_SKILLS: SkillDefinition[] = [
         { stat: 'finesse', coefficient: 0.40 },
       ],
       element: 'physical',
+      perStack: {
+        basePowerPerStack: [1.50, 2.00, 2.60, 3.30, 4.20],
+        scalingPerStack: [
+          [{ stat: 'attackPower', coefficient: 1.50 }, { stat: 'finesse', coefficient: 0.40 }],
+          [{ stat: 'attackPower', coefficient: 2.00 }, { stat: 'finesse', coefficient: 0.80 }],
+          [{ stat: 'attackPower', coefficient: 2.60 }, { stat: 'finesse', coefficient: 1.20 }],
+          [{ stat: 'attackPower', coefficient: 3.30 }, { stat: 'finesse', coefficient: 1.60 }],
+          [{ stat: 'attackPower', coefficient: 4.20 }, { stat: 'finesse', coefficient: 2.00 }],
+        ],
+      },
     },
+    timing: { castMs: 0, activeMs: 350, recoveryMs: 250 },
+    stagger: { staggerPower: 25, canStagger: true },
+    pvpMultipliers: { damageMultiplier: 0.70 },
     unlockLevel: 16,
     iconPath: 'icons/skills/shade/sever.png',
   },
@@ -1164,10 +1467,13 @@ const SHADE_SKILLS: SkillDefinition[] = [
     classId: 'shade',
     displayName: 'Execution',
     description:
-      'Execute a target below 25% health for massive damage. Instantly kills most non-boss enemies.',
+      'Execute a target below 25% health. Damage scales with missing HP. Boss cap: 3.25 P. Costs 3 Momentum.',
     kind: 'active',
     resourceId: 'momentum',
     resourceCost: 3,
+    resourceEffects: [
+      { resourceId: 'momentum', amount: -3, isPercentOfMax: false },
+    ],
     cooldownSeconds: 18,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -1175,13 +1481,32 @@ const SHADE_SKILLS: SkillDefinition[] = [
     castableWhileMoving: false,
     range: 0,
     coefficients: {
-      basePower: 5.00,
+      basePower: 1.50,
       scaling: [
-        { stat: 'attackPower', coefficient: 5.00 },
-        { stat: 'finesse', coefficient: 1.50 },
+        { stat: 'attackPower', coefficient: 1.50 },
+        { stat: 'missingHp', coefficient: 0.03 },
+        { stat: 'finesse', coefficient: 0.50 },
       ],
       element: 'shadow',
+      conditionals: [
+        {
+          condition: 'below_hp_threshold',
+          threshold: 0.25,
+          damageMultiplier: 1.50,
+        },
+        {
+          condition: 'boss_target',
+          basePower: 3.25,
+          scaling: [
+            { stat: 'attackPower', coefficient: 3.25 },
+            { stat: 'finesse', coefficient: 1.00 },
+          ],
+        },
+      ],
     },
+    timing: { castMs: 0, activeMs: 300, recoveryMs: 300 },
+    stagger: { staggerPower: 35, canStagger: true },
+    pvpMultipliers: { damageMultiplier: 0.60 },
     unlockLevel: 22,
     iconPath: 'icons/skills/shade/execution.png',
   },
@@ -1190,10 +1515,13 @@ const SHADE_SKILLS: SkillDefinition[] = [
     classId: 'shade',
     displayName: 'Phantom Double',
     description:
-      'Create a shadowy duplicate that mimics your attacks for a short duration.',
+      'Create a shadowy duplicate that mimics your attacks for a short duration. Costs 2 Momentum.',
     kind: 'active',
     resourceId: 'momentum',
     resourceCost: 2,
+    resourceEffects: [
+      { resourceId: 'momentum', amount: -2, isPercentOfMax: false },
+    ],
     cooldownSeconds: 24,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -1207,6 +1535,9 @@ const SHADE_SKILLS: SkillDefinition[] = [
       appliesStatus: 'phantom_double',
       effectDuration: 8,
     },
+    timing: { castMs: 0, activeMs: 100, recoveryMs: 100 },
+    stagger: { staggerPower: 0, canStagger: false },
+    pvpMultipliers: { damageMultiplier: 0.75, durationMultiplier: 0.75 },
     unlockLevel: 30,
     iconPath: 'icons/skills/shade/phantom_double.png',
   },
@@ -1215,10 +1546,13 @@ const SHADE_SKILLS: SkillDefinition[] = [
     classId: 'shade',
     displayName: 'Relentless',
     description:
-      'Passive: Critical hits grant additional Momentum and reduce ability cooldowns.',
+      'Passive: Critical hits grant additional Momentum and reduce ability cooldowns by 10%.',
     kind: 'passive',
     resourceId: null,
     resourceCost: 0,
+    resourceEffects: [
+      { resourceId: 'momentum', amount: 1, isPercentOfMax: false },
+    ],
     cooldownSeconds: 0,
     charges: 1,
     chargeRechargeSeconds: 0,
@@ -1229,6 +1563,8 @@ const SHADE_SKILLS: SkillDefinition[] = [
       basePower: 0,
       scaling: [],
     },
+    timing: { castMs: 0, activeMs: 0, recoveryMs: 0 },
+    stagger: { staggerPower: 0, canStagger: false },
     unlockLevel: 40,
     iconPath: 'icons/skills/shade/relentless.png',
   },

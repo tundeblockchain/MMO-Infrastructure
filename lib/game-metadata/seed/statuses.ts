@@ -256,4 +256,14 @@ export const STATUSES_V1: StatusDefinition[] = [
     persistsThroughDeath: false,
     iconPath: 'icons/statuses/harmony.png',
   },
+  {
+    statusId: 'divine_intervention',
+    displayName: 'Divine Intervention',
+    description: 'Protected by divine power, cannot die for the duration.',
+    category: 'buff',
+    maxStacks: 1,
+    dispellable: false,
+    persistsThroughDeath: true,
+    iconPath: 'icons/statuses/divine_intervention.png',
+  },
 ];

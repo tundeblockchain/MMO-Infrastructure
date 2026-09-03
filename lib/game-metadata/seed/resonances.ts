@@ -4,6 +4,8 @@
  * 6 resonance types for class synergies.
  * vanguard→valor, ranger→precision, arcanist→arcana,
  * machinist→innovation, warden→sanctuary, shade→subterfuge
+ *
+ * All bonusPercent values as decimals: 10% → 0.10
  */
 
 import { ResonanceDefinition } from '../models';
@@ -15,8 +17,8 @@ export const RESONANCES_V1: ResonanceDefinition[] = [
     description:
       'The resonance of the Vanguard. Party members gain increased health and damage resistance when valor is high.',
     partyBonus: [
-      { stat: 'hp', bonusPercent: 10 },
-      { stat: 'armor', bonusPercent: 8 },
+      { stat: 'hp', bonusPercent: 0.10 },
+      { stat: 'armor', bonusPercent: 0.08 },
     ],
   },
   {
@@ -25,8 +27,8 @@ export const RESONANCES_V1: ResonanceDefinition[] = [
     description:
       'The resonance of the Ranger. Party members gain increased critical hit chance and accuracy when precision is focused.',
     partyBonus: [
-      { stat: 'attackPower', bonusPercent: 6 },
-      { stat: 'movementSpeed', bonusPercent: 5 },
+      { stat: 'attackPower', bonusPercent: 0.06 },
+      { stat: 'movementSpeed', bonusPercent: 0.05 },
     ],
   },
   {
@@ -35,8 +37,8 @@ export const RESONANCES_V1: ResonanceDefinition[] = [
     description:
       'The resonance of the Arcanist. Party members gain increased spell power and elemental damage when arcana flows.',
     partyBonus: [
-      { stat: 'spellPower', bonusPercent: 10 },
-      { stat: 'resourcePool', bonusPercent: 5 },
+      { stat: 'spellPower', bonusPercent: 0.10 },
+      { stat: 'resourcePool', bonusPercent: 0.05 },
     ],
   },
   {
@@ -45,8 +47,8 @@ export const RESONANCES_V1: ResonanceDefinition[] = [
     description:
       'The resonance of the Machinist. Party members gain increased tech power and resource regeneration when innovation sparks.',
     partyBonus: [
-      { stat: 'resourcePool', bonusPercent: 8 },
-      { stat: 'armor', bonusPercent: 5 },
+      { stat: 'resourcePool', bonusPercent: 0.08 },
+      { stat: 'armor', bonusPercent: 0.05 },
     ],
   },
   {
@@ -55,8 +57,8 @@ export const RESONANCES_V1: ResonanceDefinition[] = [
     description:
       'The resonance of the Warden. Party members gain increased healing received and damage reduction when sanctuary prevails.',
     partyBonus: [
-      { stat: 'hp', bonusPercent: 8 },
-      { stat: 'spellPower', bonusPercent: 5 },
+      { stat: 'hp', bonusPercent: 0.08 },
+      { stat: 'spellPower', bonusPercent: 0.05 },
     ],
   },
   {
@@ -65,8 +67,8 @@ export const RESONANCES_V1: ResonanceDefinition[] = [
     description:
       'The resonance of the Shade. Party members gain increased critical damage and movement speed when shadows gather.',
     partyBonus: [
-      { stat: 'attackPower', bonusPercent: 8 },
-      { stat: 'movementSpeed', bonusPercent: 8 },
+      { stat: 'attackPower', bonusPercent: 0.08 },
+      { stat: 'movementSpeed', bonusPercent: 0.08 },
     ],
   },
 ];

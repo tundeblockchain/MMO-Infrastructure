@@ -165,6 +165,34 @@ export interface CombatTimingConstants {
 }
 
 /**
+ * Stagger system constants.
+ */
+export interface StaggerConstants {
+  /** Base stagger threshold for players */
+  baseStaggerThreshold: number;
+  /** Stagger recovery rate per second */
+  staggerRecoveryRate: number;
+  /** Stagger duration when threshold exceeded (seconds) */
+  staggerDurationSeconds: number;
+  /** Stagger immunity duration after recovery (seconds) */
+  staggerImmunitySeconds: number;
+}
+
+/**
+ * Global PvP balance multipliers (all as decimals, 1.0 = no change).
+ */
+export interface PvPConstants {
+  /** Global damage reduction in PvP */
+  globalDamageMultiplier: number;
+  /** Global healing reduction in PvP */
+  globalHealingMultiplier: number;
+  /** Crowd control duration multiplier in PvP */
+  ccDurationMultiplier: number;
+  /** Execute threshold modifier in PvP (additive) */
+  executeThresholdModifier: number;
+}
+
+/**
  * Complete combat constants catalog.
  * All percentages stored as decimals (150% = 1.50, 15% = 0.15).
  * Extensible via additionalConstants map for future additions.
@@ -182,6 +210,8 @@ export interface CombatConstants {
   statCaps: StatCapConstants;
   dodge: DodgeConstants;
   timing: CombatTimingConstants;
+  stagger: StaggerConstants;
+  pvp: PvPConstants;
   /**
    * Extensible map for additional constants that may be added in future versions.
    * Allows adding new tunable values without schema changes.

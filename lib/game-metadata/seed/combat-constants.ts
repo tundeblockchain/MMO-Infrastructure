@@ -101,6 +101,18 @@ export const COMBAT_CONSTANTS_V1: CombatConstants = {
     outOfCombatResourceRegen: 0.10,
     combatDropoffSeconds: 10,
   },
+  stagger: {
+    baseStaggerThreshold: 100,
+    staggerRecoveryRate: 10,
+    staggerDurationSeconds: 2,
+    staggerImmunitySeconds: 3,
+  },
+  pvp: {
+    globalDamageMultiplier: 0.60,
+    globalHealingMultiplier: 0.70,
+    ccDurationMultiplier: 0.50,
+    executeThresholdModifier: -0.10,
+  },
   additionalConstants: {
     allocationCostBand1Max: 30,
     allocationCostBand2Max: 60,
