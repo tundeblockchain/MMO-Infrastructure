@@ -211,4 +211,58 @@ describe('PipelineStack', () => {
       });
     });
   });
+
+  describe('MMO-14: CodeBuild StartBuild permissions for Assets stage', () => {
+    it('grants codebuild:StartBuild permission to CodeBuild action roles', () => {
+      const stack = createTestStack();
+      const template = Template.fromStack(stack);
+
+      template.hasResourceProperties('AWS::IAM::Policy', {
+        PolicyDocument: {
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Action: ['codebuild:StartBuild', 'codebuild:BatchGetBuilds'],
+              Effect: 'Allow',
+              Resource: Match.stringLikeRegexp('arn:aws:codebuild:.*:.*:project/\\*'),
+            }),
+          ]),
+        },
+      });
+    });
+
+    it('attaches StartBuild policy to action roles used by CodeBuild actions', () => {
+      const stack = createTestStack();
+      const template = Template.fromStack(stack);
+
+      const policyResources = template.findResources('AWS::IAM::Policy', {
+        Properties: {
+          PolicyDocument: {
+            Statement: Match.arrayWith([
+              Match.objectLike({
+                Action: ['codebuild:StartBuild', 'codebuild:BatchGetBuilds'],
+              }),
+            ]),
+          },
+        },
+      });
+
+      expect(Object.keys(policyResources).length).toBeGreaterThan(0);
+    });
+
+    it('grants StartBuild on all CodeBuild projects in the account/region', () => {
+      const stack = createTestStack();
+      const template = Template.fromStack(stack);
+
+      template.hasResourceProperties('AWS::IAM::Policy', {
+        PolicyDocument: {
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Action: ['codebuild:StartBuild', 'codebuild:BatchGetBuilds'],
+              Resource: 'arn:aws:codebuild:eu-west-2:123456789012:project/*',
+            }),
+          ]),
+        },
+      });
+    });
+  });
 });
