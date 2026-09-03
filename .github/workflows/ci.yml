@@ -34,7 +34,8 @@ jobs:
           npx cdk synth \
             -c githubConnectionArn=arn:aws:codestar-connections:eu-west-2:000000000000:connection/ci-dummy \
             -c githubOwner=tundeblockchain \
-            -c githubRepo=MMO-Infrastructure
+            -c githubRepo=MMO-Infrastructure \
+            -c githubBranch=master
         env:
           CDK_DEFAULT_ACCOUNT: '000000000000'
           CDK_DEFAULT_REGION: 'eu-west-2'
