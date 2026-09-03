@@ -88,7 +88,13 @@ export class ApiStack extends cdk.Stack {
       description: 'Read-only game metadata catalog API for ZoneServer',
     });
 
-    const lambdaFunctions = [authSessionFn, charactersFn, charactersSaveFn];
+    const catalogWriteFn = createLambda('CatalogWriteFn', {
+      functionName: `${prefix}-catalog-write`,
+      entry: path.join(lambdasDir, 'catalog-write', 'handler.ts'),
+      description: 'Authenticated catalog publish API (MMO-7)',
+    });
+
+    const lambdaFunctions = [authSessionFn, charactersFn, charactersSaveFn, catalogWriteFn];
 
     for (const fn of lambdaFunctions) {
       props.table.grantReadWriteData(fn);
@@ -162,6 +168,11 @@ export class ApiStack extends cdk.Stack {
       catalogFn
     );
 
+    const catalogWriteIntegration = new apigwv2Integrations.HttpLambdaIntegration(
+      'CatalogWriteIntegration',
+      catalogWriteFn
+    );
+
     this.httpApi.addRoutes({
       path: '/catalog/versions',
       methods: [apigwv2.HttpMethod.GET],
@@ -178,6 +189,12 @@ export class ApiStack extends cdk.Stack {
       path: '/catalog/{catalogType}/v/{version}',
       methods: [apigwv2.HttpMethod.GET],
       integration: catalogIntegration,
+    });
+
+    this.httpApi.addRoutes({
+      path: '/catalog/{catalogType}/versions',
+      methods: [apigwv2.HttpMethod.POST],
+      integration: catalogWriteIntegration,
     });
 
     new cdk.CfnOutput(this, 'ApiUrl', {
