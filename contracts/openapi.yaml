@@ -7,7 +7,7 @@ info:
     
     **Authentication:**
     - Character endpoints use Firebase ID tokens or game session JWTs
-    - Catalog write endpoints require Firebase ID tokens
+    - Catalog write endpoints require Firebase ID tokens (admin only)
     - Catalog read endpoints are unauthenticated (for ZoneServer caching)
     
     **Catalog Read APIs (MMO-6, MMO-10):**
@@ -19,13 +19,28 @@ info:
     - `GET /catalog/versions` - List all published versions for version selection
     - `GET /catalog/{catalogType}/v/{version}` - Read entities for a pinned version
     
+    **Admin Catalog Publish Workflow (MMO-11 / MMO-18):**
+    Admins use `POST /catalog/{catalogType}/versions` to publish new immutable catalog versions.
+    Each call creates a new version with an auto-assigned version number.
+    Published versions are immutable — there is no PATCH or update mechanism.
+    
+    To update catalog data:
+    1. Prepare the complete new catalog data locally (e.g., from draft in mmo-admin)
+    2. POST the full data to `/catalog/{catalogType}/versions` for each catalog type
+    3. Each POST returns the newly allocated version number
+    4. ZoneServer will pick up new versions on next boot via `/catalog/versions/latest`
+    
+    **Multi-type publish:** When releasing coordinated changes across multiple catalog types,
+    make separate POST requests for each type. There is no atomic multi-type publish —
+    version coordination is the responsibility of the admin tooling.
+    
     **Entity Types:**
     - **class**: 6 playable classes with startingStats (ClassDefinition[])
     - **skill**: 48 skills with coefficients, timing, stagger (SkillDefinition[])
     - **status**: Buff/debuff/DoT/HoT effects (StatusDefinition[])
     - **element**: 8 damage types with strengths/weaknesses (ElementDefinition[])
     - **resonance**: 6 class synergy mechanics (ResonanceDefinition[])
-    - **combat-constants**: Global combat math constants (CombatConstants object)
+    - **combat-constants**: Global combat math constants (CombatConstantsData object)
     
     **Data Conventions:**
     - Percents as decimals: 150% = 1.50, 15% = 0.15
@@ -252,7 +267,7 @@ paths:
         - **status**: Array of StatusDefinition objects (buff/debuff/dot/hot/control)
         - **element**: Array of ElementDefinition objects with strongAgainst/weakAgainst
         - **resonance**: Array of ResonanceDefinition objects with partyBonus
-        - **combat-constants**: Single CombatConstants object with nested powerScaling, critical, defense, etc.
+        - **combat-constants**: Single CombatConstantsData object with nested powerScaling, critical, defense, etc.
         
         **Immutability:**
         Published versions are immutable. Reads are always by explicit version - never "always-latest"
@@ -560,12 +575,12 @@ paths:
               $ref: '#/components/schemas/PublishCatalogRequest'
             examples:
               classData:
-                summary: Publish class definitions
+                summary: Publish class definitions (array of ClassDefinition)
                 value:
                   data:
                     - classId: vanguard
                       displayName: Vanguard
-                      description: A stalwart frontline defender who protects allies and controls the battlefield.
+                      description: A stalwart frontline defender who protects allies and controls the battlefield through sheer resilience and powerful melee strikes.
                       primaryResource: resolve
                       startingStats:
                         strength: 12
@@ -583,9 +598,33 @@ paths:
                         movementSpeed: 5.0
                       resonance: valor
                       roles: [tank, dps]
-                  releaseNotes: Initial class definitions
+                    - classId: warden
+                      displayName: Warden
+                      description: A divine guardian who balances offensive judgment and protective radiance.
+                      primaryResource: radiance
+                      secondaryResource: judgement
+                      startingStats:
+                        strength: 5
+                        finesse: 6
+                        vitality: 10
+                        intellect: 12
+                        precision: 6
+                        luck: 6
+                        tech: 5
+                        hp: 120
+                        resourcePool: 100
+                        armor: 12
+                        attackPower: 12
+                        spellPower: 25
+                        movementSpeed: 5.0
+                      resonance: sanctuary
+                      roles: [healer, support]
+                  releaseNotes: Initial class definitions with all 6 base classes
               combatConstants:
-                summary: Publish combat constants
+                summary: Publish combat constants (object with nested powerScaling)
+                description: |
+                  Combat constants use nested structure with percentages as decimals.
+                  150% = 1.50, 15% = 0.15, 5% = 0.05
                 value:
                   data:
                     powerScaling:
@@ -595,16 +634,174 @@ paths:
                       spellPower:
                         intellectMultiplier: 2
                         levelMultiplier: 1
+                      techPower:
+                        techMultiplier: 2
+                        levelMultiplier: 1
+                      devicePower:
+                        techDivisor: 100
+                    speed:
+                      attackSpeed:
+                        finesseConstant: 400
+                        attackSpeedCap: 2.5
+                      dodgeRecovery:
+                        finesseConstant: 1000
+                    vitality:
+                      maxHp:
+                        vitalityDivisor: 100
+                      healingReceived:
+                        vitalityDivisor: 1000
+                    accuracy:
+                      baseHitChance: 0.90
+                      accuracyBonus:
+                        precisionConstant: 300
+                        maxAccuracyBonus: 0.15
+                      weakPoint:
+                        precisionMultiplier: 0.0015
                     critical:
                       baseCritChance: 0.05
+                      critChance:
+                        luckConstant: 500
+                        maxLuckCritBonus: 0.30
+                      procChance:
+                        luckDivisor: 500
                       criticalDamageMultiplier: 1.50
                     defense:
+                      defenseConstant:
+                        baseConstant: 200
+                        levelMultiplier: 15
                       armorReductionPerPoint: 0.001
                       maxArmorReduction: 0.75
+                      blockDamageReduction: 0.50
+                    glancingHit:
+                      damageMultiplier: 0.50
+                      canCrit: false
+                      canStagger: false
+                    status:
+                      resistanceConstant: 100
+                    statAllocationBands:
+                      - { minLevel: 1, maxLevel: 10, pointsPerLevel: 2, allocationCostPerPoint: 1 }
+                      - { minLevel: 11, maxLevel: 30, pointsPerLevel: 3, allocationCostPerPoint: 1 }
+                    statCaps:
+                      softCap: 100
+                      hardCap: 150
+                      softCapPenalty: 0.50
+                    dodge:
+                      baseDodgeChance: 0.02
+                      maxDodgeChance: 0.40
+                    timing:
+                      globalCooldown: 1.5
+                      outOfCombatHpRegen: 0.05
+                      outOfCombatResourceRegen: 0.10
+                      combatDropoffSeconds: 10
+                    stagger:
+                      baseStaggerThreshold: 100
+                      staggerRecoveryRate: 10
+                      staggerDurationSeconds: 2
+                      staggerImmunitySeconds: 3
+                    pvp:
+                      globalDamageMultiplier: 0.60
+                      globalHealingMultiplier: 0.70
+                      ccDurationMultiplier: 0.50
+                      executeThresholdModifier: -0.10
                     additionalConstants:
                       defaultAttackRange: 2.5
                       targetRange: 30
-                  releaseNotes: Combat constants v2
+                      defaultAttackDamage: 10
+                      aoiRadius: 30
+                  releaseNotes: Combat constants v2 with ZoneServer defaults
+              skillData:
+                summary: Publish skill definitions (array of SkillDefinition)
+                description: |
+                  Skills include timing in ms, stagger coefficients, and PvP multipliers.
+                  All 8 skills per class, 48 total.
+                value:
+                  data:
+                    - skillId: vanguard_cleaving_strike
+                      classId: vanguard
+                      displayName: Cleaving Strike
+                      description: "1.50 P + 0.60 STR, 120° arc. +8 Resolve per target; max +16."
+                      kind: active
+                      resourceId: null
+                      resourceCost: 0
+                      resourceEffects:
+                        - { resourceId: resolve, amount: 8, isPercentOfMax: false, perTargetBonus: 8 }
+                      cooldownSeconds: 0
+                      charges: 1
+                      chargeRechargeSeconds: 0
+                      castTimeSeconds: 0
+                      castableWhileMoving: false
+                      range: 0
+                      coefficients:
+                        basePower: 1.50
+                        scaling:
+                          - { stat: attackPower, coefficient: 1.50 }
+                          - { stat: strength, coefficient: 0.60 }
+                        element: physical
+                      timing: { castMs: 0, activeMs: 350, recoveryMs: 300 }
+                      stagger: { staggerPower: 20, canStagger: true }
+                      pvpMultipliers:
+                        damageMultiplier: 0.90
+                        resourceOverride: { resourceId: resolve, amount: 12 }
+                      unlockLevel: 1
+                      iconPath: icons/skills/vanguard/cleaving_strike.png
+                  releaseNotes: Initial skill definitions with full timing and PvP data
+              statusData:
+                summary: Publish status effect definitions (array of StatusDefinition)
+                value:
+                  data:
+                    - statusId: flame
+                      displayName: Flame
+                      description: Burning from fire damage, taking damage over time.
+                      category: dot
+                      maxStacks: 3
+                      dispellable: true
+                      persistsThroughDeath: false
+                      iconPath: icons/statuses/flame.png
+                    - statusId: stagger
+                      displayName: Stagger
+                      description: Staggered, briefly unable to act.
+                      category: control
+                      maxStacks: 1
+                      dispellable: false
+                      persistsThroughDeath: false
+                      iconPath: icons/statuses/stagger.png
+                  releaseNotes: Status effects for DoT, control, debuff, and buff categories
+              elementData:
+                summary: Publish element definitions (array of ElementDefinition)
+                description: |
+                  Element affinities use decimals: 1.25 = 25% bonus, 0.75 = 25% reduced.
+                value:
+                  data:
+                    - elementId: fire
+                      displayName: Fire
+                      color: "#FF4500"
+                      strongAgainst: { ice: 1.25, nature: 1.25 }
+                      weakAgainst: { fire: 0.50 }
+                    - elementId: ice
+                      displayName: Ice
+                      color: "#00BFFF"
+                      strongAgainst: { lightning: 1.25, nature: 1.15 }
+                      weakAgainst: { fire: 0.75, ice: 0.50 }
+                  releaseNotes: 8 damage elements with affinity relationships
+              resonanceData:
+                summary: Publish resonance definitions (array of ResonanceDefinition)
+                description: |
+                  Resonance bonuses use decimals: 0.10 = 10% bonus.
+                value:
+                  data:
+                    - resonanceId: valor
+                      displayName: Valor
+                      description: The resonance of the Vanguard. Party members gain increased health and damage resistance.
+                      partyBonus:
+                        - { stat: hp, bonusPercent: 0.10 }
+                        - { stat: armor, bonusPercent: 0.08 }
+                    - resonanceId: arcana
+                      displayName: Arcana
+                      description: The resonance of the Arcanist. Party members gain increased spell power.
+                      partyBonus:
+                        - { stat: spellPower, bonusPercent: 0.10 }
+                        - { stat: resourcePool, bonusPercent: 0.05 }
+                  releaseNotes: 6 resonance types for class synergies
       responses:
         '201':
           description: Catalog version published
@@ -740,6 +937,9 @@ components:
 
     CatalogData:
       type: object
+      description: |
+        Complete catalog data returned from GET requests.
+        The `data` field structure depends on the catalogType.
       required:
         - catalogType
         - version
@@ -770,25 +970,74 @@ components:
           description: Optional description of changes in this version
         data:
           oneOf:
-            - type: object
-              description: Object for combat-constants
+            - $ref: '#/components/schemas/CombatConstantsData'
             - type: array
-              description: Array for class, skill, status, element, resonance
+              items:
+                $ref: '#/components/schemas/ClassDefinition'
+            - type: array
+              items:
+                $ref: '#/components/schemas/SkillDefinition'
+            - type: array
+              items:
+                $ref: '#/components/schemas/StatusDefinition'
+            - type: array
+              items:
+                $ref: '#/components/schemas/ElementDefinition'
+            - type: array
+              items:
+                $ref: '#/components/schemas/ResonanceDefinition'
+          description: |
+            Catalog data. Structure depends on catalogType:
+            - **combat-constants**: CombatConstantsData object
+            - **class**: Array of ClassDefinition
+            - **skill**: Array of SkillDefinition
+            - **status**: Array of StatusDefinition
+            - **element**: Array of ElementDefinition
+            - **resonance**: Array of ResonanceDefinition
 
     PublishCatalogRequest:
       type: object
+      description: |
+        Request body for publishing a new catalog version.
+        The `data` field structure depends on the catalog type being published.
       required:
         - data
       properties:
         data:
           oneOf:
-            - type: object
-              description: Object for combat-constants catalog
+            - $ref: '#/components/schemas/CombatConstantsData'
             - type: array
-              description: Array for class, skill, status, element, resonance catalogs
+              items:
+                $ref: '#/components/schemas/ClassDefinition'
+              description: Array of ClassDefinition for class catalog
+            - type: array
+              items:
+                $ref: '#/components/schemas/SkillDefinition'
+              description: Array of SkillDefinition for skill catalog
+            - type: array
+              items:
+                $ref: '#/components/schemas/StatusDefinition'
+              description: Array of StatusDefinition for status catalog
+            - type: array
+              items:
+                $ref: '#/components/schemas/ElementDefinition'
+              description: Array of ElementDefinition for element catalog
+            - type: array
+              items:
+                $ref: '#/components/schemas/ResonanceDefinition'
+              description: Array of ResonanceDefinition for resonance catalog
+          description: |
+            Catalog data payload. Structure depends on catalogType:
+            - **combat-constants**: CombatConstantsData object with nested powerScaling, critical, etc.
+            - **class**: Array of ClassDefinition with startingStats
+            - **skill**: Array of SkillDefinition with timing, stagger, pvpMultipliers
+            - **status**: Array of StatusDefinition
+            - **element**: Array of ElementDefinition with strongAgainst/weakAgainst
+            - **resonance**: Array of ResonanceDefinition with partyBonus
         releaseNotes:
           type: string
           description: Optional description of changes in this version
+          example: Initial release with all base classes
 
     PublishedCatalogResponse:
       type: object
@@ -866,9 +1115,11 @@ components:
           description: Human-readable error message
 
     # =========================================================================
-    # Entity Schemas - MMO-10
+    # Entity Schemas - MMO-10 / MMO-11
     # Detailed schemas for each catalog entity type.
     # Admin (MMO-17) uses these to list and read entities by pinned version.
+    # Admin (MMO-18) uses these to publish new catalog versions.
+    # All percentages stored as decimals: 150% = 1.50, 15% = 0.15, 5% = 0.05
     # =========================================================================
 
     PrimaryStats:
@@ -886,24 +1137,31 @@ components:
         strength:
           type: number
           description: Physical damage scaling
+          example: 12
         finesse:
           type: number
           description: Attack speed, dodge recovery
+          example: 7
         vitality:
           type: number
           description: Max HP, healing received
+          example: 12
         intellect:
           type: number
           description: Spell power scaling
+          example: 4
         precision:
           type: number
           description: Hit chance, weak point chance
+          example: 6
         luck:
           type: number
           description: Crit chance, proc chance
+          example: 5
         tech:
           type: number
           description: Tech/device power scaling
+          example: 4
 
     ClassStartingStats:
       allOf:
@@ -920,21 +1178,27 @@ components:
             hp:
               type: number
               description: Base health points
+              example: 150
             resourcePool:
               type: number
               description: Base resource pool size
+              example: 100
             armor:
               type: number
               description: Base armor value
+              example: 20
             attackPower:
               type: number
               description: Base attack power (derived, stored for reference)
+              example: 26
             spellPower:
               type: number
               description: Base spell power (derived, stored for reference)
+              example: 9
             movementSpeed:
               type: number
               description: Base movement speed (units per second)
+              example: 5.0
 
     ClassDefinition:
       type: object
@@ -952,36 +1216,43 @@ components:
           type: string
           enum: [vanguard, ranger, arcanist, machinist, warden, shade]
           description: Unique class identifier
+          example: vanguard
         displayName:
           type: string
           description: Display name for the class
+          example: Vanguard
         description:
           type: string
           description: Class description
+          example: A stalwart frontline defender who protects allies and controls the battlefield.
         primaryResource:
           type: string
           enum: [resolve, focus, mana, charge, radiance, momentum]
           description: Primary resource used by this class
+          example: resolve
         secondaryResource:
           type: string
           enum: [judgement]
-          description: Secondary resource (if any)
+          description: Secondary resource (if any, e.g., judgement for Warden)
+          example: judgement
         startingStats:
           $ref: '#/components/schemas/ClassStartingStats'
         resonance:
           type: string
           enum: [valor, precision, arcana, innovation, sanctuary, subterfuge]
           description: Associated resonance type
+          example: valor
         roles:
           type: array
           items:
             type: string
             enum: [tank, healer, dps, support]
           description: Role tags for matchmaking/UI
+          example: [tank, dps]
 
     ScalingVector:
       type: object
-      description: Stat scaling for damage/healing calculations
+      description: Stat scaling coefficient for damage/healing calculations
       required:
         - stat
         - coefficient
@@ -1007,9 +1278,11 @@ components:
             - luck
             - tech
           description: Stat that contributes to scaling
+          example: attackPower
         coefficient:
           type: number
           description: Coefficient for this stat (e.g., 0.5 = 50% of stat value)
+          example: 1.50
 
     SkillTiming:
       type: object
@@ -1022,16 +1295,117 @@ components:
         castMs:
           type: integer
           description: Cast/windup time before skill activates (ms)
+          example: 0
         activeMs:
           type: integer
           description: Active/execution time of the skill (ms)
+          example: 350
         recoveryMs:
           type: integer
           description: Recovery/backswing time after skill completes (ms)
+          example: 300
         activePhaseType:
           type: string
           enum: [standard, hold, stance, reaction, deploy, buff, summon, channel]
           description: Type of active phase for special behaviors
+          example: standard
+
+    StaggerCoefficients:
+      type: object
+      description: Stagger mechanics for a skill
+      required:
+        - staggerPower
+        - canStagger
+      properties:
+        staggerPower:
+          type: number
+          description: Base stagger value dealt
+          example: 20
+        staggerResist:
+          type: number
+          description: Stagger resistance granted during skill (0-1)
+          example: 0.50
+        canStagger:
+          type: boolean
+          description: Whether this skill can stagger on hit
+          example: true
+        perStackStagger:
+          type: number
+          description: Per-stack stagger values for stack-based skills
+          example: 15
+        staggerPerHit:
+          type: number
+          description: Stagger per hit for multi-hit skills
+          example: 5
+        bonusStagger:
+          type: object
+          properties:
+            condition:
+              type: string
+              example: perfect_timing
+            value:
+              type: number
+              example: 70
+        statusBuildup:
+          type: object
+          properties:
+            status:
+              type: string
+              example: armor_break
+            value:
+              type: number
+              example: 35
+
+    PvPMultipliers:
+      type: object
+      description: PvP balance multipliers (all as decimals, 1.0 = no change)
+      properties:
+        damageMultiplier:
+          type: number
+          description: Damage multiplier in PvP
+          example: 0.90
+        healingMultiplier:
+          type: number
+          description: Healing multiplier in PvP
+          example: 0.80
+        durationMultiplier:
+          type: number
+          description: Duration multiplier for effects in PvP
+        durationSeconds:
+          type: number
+          description: Duration override in seconds for PvP
+          example: 4
+        cooldownMultiplier:
+          type: number
+          description: Cooldown multiplier in PvP
+        cooldownSeconds:
+          type: number
+          description: Cooldown override in seconds for PvP
+        staggerMultiplier:
+          type: number
+          description: Stagger multiplier in PvP
+          example: 0.70
+        resourceOverride:
+          type: object
+          properties:
+            resourceId:
+              type: string
+            amount:
+              type: number
+          example: { resourceId: resolve, amount: 12 }
+        maxTargets:
+          type: integer
+          description: Max targets override for PvP
+          example: 3
+        maxHitsPerTarget:
+          type: integer
+          description: Max hits per target override for PvP
+        effectOverrides:
+          type: object
+          additionalProperties:
+            type: number
+          description: Effect value overrides
+          example: { blockReduction: 0.50, critBonus: 0.10 }
 
     ResourceEffect:
       type: object
@@ -1044,96 +1418,19 @@ components:
         resourceId:
           type: string
           description: Resource type affected
+          example: resolve
         amount:
           type: number
           description: Amount (positive = generate, negative = consume)
+          example: 8
         isPercentOfMax:
           type: boolean
           description: If true, amount is % of max resource (0.10 = 10%)
+          example: false
         perTargetBonus:
           type: number
           description: Per-target bonus for AoE skills
-
-    StaggerCoefficients:
-      type: object
-      description: Stagger mechanics for a skill
-      required:
-        - staggerPower
-        - canStagger
-      properties:
-        staggerPower:
-          type: number
-          description: Base stagger value dealt
-        staggerResist:
-          type: number
-          description: Stagger resistance granted during skill (0-1)
-        canStagger:
-          type: boolean
-          description: Whether this skill can stagger on hit
-        perStackStagger:
-          type: number
-          description: Per-stack stagger values for stack-based skills
-        staggerPerHit:
-          type: number
-          description: Stagger per hit for multi-hit skills
-        bonusStagger:
-          type: object
-          properties:
-            condition:
-              type: string
-            value:
-              type: number
-        statusBuildup:
-          type: object
-          properties:
-            status:
-              type: string
-            value:
-              type: number
-
-    PvPMultipliers:
-      type: object
-      description: PvP balance multipliers (decimals, 1.0 = no change)
-      properties:
-        damageMultiplier:
-          type: number
-          description: Damage multiplier in PvP
-        healingMultiplier:
-          type: number
-          description: Healing multiplier in PvP
-        durationMultiplier:
-          type: number
-          description: Duration multiplier for effects in PvP
-        durationSeconds:
-          type: number
-          description: Duration override in seconds for PvP
-        cooldownMultiplier:
-          type: number
-          description: Cooldown multiplier in PvP
-        cooldownSeconds:
-          type: number
-          description: Cooldown override in seconds for PvP
-        staggerMultiplier:
-          type: number
-          description: Stagger multiplier in PvP
-        resourceOverride:
-          type: object
-          properties:
-            resourceId:
-              type: string
-            amount:
-              type: number
-        maxTargets:
-          type: integer
-          description: Max targets override for PvP
-        maxHitsPerTarget:
-          type: integer
-          description: Max hits per target override for PvP
-        effectOverrides:
-          type: object
-          additionalProperties:
-            type: number
-          description: Effect value overrides
+          example: 8
 
     SkillCoefficients:
       type: object
@@ -1145,6 +1442,7 @@ components:
         basePower:
           type: number
           description: Base damage/healing amount (power coefficient)
+          example: 1.50
         scaling:
           type: array
           items:
@@ -1154,16 +1452,45 @@ components:
           type: string
           enum: [physical, fire, ice, lightning, arcane, nature, shadow, radiant]
           description: Element type for damage skills
+          example: physical
         appliesStatus:
           type: string
           description: Status effect applied on hit
+          example: armor_break
         effectDuration:
           type: number
           description: Duration of applied effect in seconds
+          example: 6
+        perStack:
+          type: object
+          description: Per-stack coefficient progression (e.g., Sever momentum stacks)
+          properties:
+            basePowerPerStack:
+              type: array
+              items:
+                type: number
+              description: Per-stack base power values (index 0 = 1 stack)
+              example: [1.50, 2.00, 2.60, 3.30, 4.20]
+        conditionals:
+          type: array
+          items:
+            type: object
+            properties:
+              condition:
+                type: string
+                enum: [marked, below_hp_threshold, above_hp_threshold, perfect_timing, flanking, stealthed, boss_target]
+              threshold:
+                type: number
+                description: Threshold value for HP conditions (as decimal)
+              basePower:
+                type: number
+              damageMultiplier:
+                type: number
+          description: Conditional coefficient modifiers
 
     SkillDefinition:
       type: object
-      description: Skill definition with coefficients and scaling
+      description: Complete skill definition with coefficients and timing
       required:
         - skillId
         - classId
@@ -1185,25 +1512,32 @@ components:
         skillId:
           type: string
           description: Stable skill identifier
+          example: vanguard_cleaving_strike
         classId:
           type: string
           enum: [vanguard, ranger, arcanist, machinist, warden, shade]
           description: Class this skill belongs to
+          example: vanguard
         displayName:
           type: string
+          example: Cleaving Strike
         description:
           type: string
+          example: "1.50 P + 0.60 STR, 120° arc. +8 Resolve per target; max +16."
         kind:
           type: string
           enum: [active, passive, reaction]
           description: Activation type
+          example: active
         resourceId:
           type: string
           nullable: true
           description: Resource consumed (null for no cost)
+          example: null
         resourceCost:
           type: number
           description: Resource cost amount
+          example: 0
         resourceEffects:
           type: array
           items:
@@ -1212,21 +1546,27 @@ components:
         cooldownSeconds:
           type: number
           description: Cooldown in seconds (0 for no cooldown)
+          example: 0
         internalCooldownSeconds:
           type: number
           description: Internal cooldown per target in seconds
         charges:
           type: integer
           description: Maximum charges
+          example: 1
         chargeRechargeSeconds:
           type: number
+          example: 0
         castTimeSeconds:
           type: number
+          example: 0
         castableWhileMoving:
           type: boolean
+          example: false
         range:
           type: number
           description: Range in units (0 for melee/self)
+          example: 0
         coefficients:
           $ref: '#/components/schemas/SkillCoefficients'
         timing:
@@ -1241,8 +1581,10 @@ components:
           type: number
         unlockLevel:
           type: integer
+          example: 1
         iconPath:
           type: string
+          example: icons/skills/vanguard/cleaving_strike.png
 
     StatusDefinition:
       type: object
@@ -1260,23 +1602,31 @@ components:
         statusId:
           type: string
           description: Unique status identifier
+          example: flame
         displayName:
           type: string
+          example: Flame
         description:
           type: string
+          example: Burning from fire damage, taking damage over time.
         category:
           type: string
           enum: [buff, debuff, dot, hot, control]
           description: Category of effect
+          example: dot
         maxStacks:
           type: integer
           description: Maximum stacks
+          example: 3
         dispellable:
           type: boolean
+          example: true
         persistsThroughDeath:
           type: boolean
+          example: false
         iconPath:
           type: string
+          example: icons/statuses/flame.png
 
     ElementDefinition:
       type: object
@@ -1292,21 +1642,26 @@ components:
           type: string
           enum: [physical, fire, ice, lightning, arcane, nature, shadow, radiant]
           description: Element identifier
+          example: fire
         displayName:
           type: string
+          example: Fire
         color:
           type: string
           description: Color hex code for UI
+          example: "#FF4500"
         strongAgainst:
           type: object
           additionalProperties:
             type: number
           description: Elements this is strong against (1.25 = 25% bonus damage)
+          example: { ice: 1.25, nature: 1.25 }
         weakAgainst:
           type: object
           additionalProperties:
             type: number
           description: Elements this is weak against (0.75 = 25% reduced damage)
+          example: { fire: 0.50 }
 
     ResonanceDefinition:
       type: object
@@ -1321,10 +1676,13 @@ components:
           type: string
           enum: [valor, precision, arcana, innovation, sanctuary, subterfuge]
           description: Resonance identifier
+          example: valor
         displayName:
           type: string
+          example: Valor
         description:
           type: string
+          example: The resonance of the Vanguard. Party members gain increased health and damage resistance.
         partyBonus:
           type: array
           items:
@@ -1336,10 +1694,20 @@ components:
               stat:
                 type: string
                 description: Stat affected
+                example: hp
               bonusPercent:
                 type: number
                 description: Bonus percent as decimal (0.10 = 10%)
+                example: 0.10
           description: Stat bonuses when party members share resonance
+          example:
+            - { stat: hp, bonusPercent: 0.10 }
+            - { stat: armor, bonusPercent: 0.08 }
+
+    # =========================================================================
+    # Combat Constants Schema - MMO-10 / MMO-11
+    # All percentages stored as decimals: 150% = 1.50, 15% = 0.15, 5% = 0.05
+    # =========================================================================
 
     PowerScalingConstants:
       type: object
@@ -1352,100 +1720,57 @@ components:
       properties:
         physicalPower:
           type: object
+          description: "PhysicalPower = Strength * strengthMultiplier + Level * levelMultiplier"
           required:
             - strengthMultiplier
             - levelMultiplier
           properties:
             strengthMultiplier:
               type: number
+              example: 2
             levelMultiplier:
               type: number
+              example: 1.5
         spellPower:
           type: object
+          description: "SpellPower = Intellect * intellectMultiplier + Level * levelMultiplier"
           required:
             - intellectMultiplier
             - levelMultiplier
           properties:
             intellectMultiplier:
               type: number
+              example: 2
             levelMultiplier:
               type: number
+              example: 1
         techPower:
           type: object
+          description: "TechPower = Tech * techMultiplier + Level * levelMultiplier"
           required:
             - techMultiplier
             - levelMultiplier
           properties:
             techMultiplier:
               type: number
+              example: 2
             levelMultiplier:
               type: number
+              example: 1
         devicePower:
           type: object
+          description: "DevicePower = Tech / techDivisor"
           required:
             - techDivisor
           properties:
             techDivisor:
               type: number
+              example: 100
 
-    CriticalConstants:
-      type: object
-      description: Critical hit and proc chance formulas
-      required:
-        - baseCritChance
-        - critChance
-        - procChance
-        - criticalDamageMultiplier
-      properties:
-        baseCritChance:
-          type: number
-          description: Base critical hit chance (decimal, 0.05 = 5%)
-        critChance:
-          type: object
-          properties:
-            luckConstant:
-              type: number
-            maxLuckCritBonus:
-              type: number
-        procChance:
-          type: object
-          properties:
-            luckDivisor:
-              type: number
-        criticalDamageMultiplier:
-          type: number
-          description: Critical damage multiplier (1.50 = 150% damage)
-
-    DefenseConstants:
-      type: object
-      description: Defense calculation constants
-      required:
-        - defenseConstant
-        - armorReductionPerPoint
-        - maxArmorReduction
-        - blockDamageReduction
-      properties:
-        defenseConstant:
-          type: object
-          properties:
-            baseConstant:
-              type: number
-            levelMultiplier:
-              type: number
-        armorReductionPerPoint:
-          type: number
-          description: Armor reduction per point (decimal, 0.001)
-        maxArmorReduction:
-          type: number
-          description: Maximum armor reduction (decimal, 0.75 = 75%)
-        blockDamageReduction:
-          type: number
-          description: Block damage reduction (decimal, 0.50 = 50%)
-
-    CombatConstants:
+    CombatConstantsData:
       type: object
       description: |
-        Complete combat constants catalog.
+        Complete combat constants catalog (object, not array).
         All percentages stored as decimals (150% = 1.50, 15% = 0.15).
       required:
         - powerScaling
@@ -1462,13 +1787,16 @@ components:
               properties:
                 finesseConstant:
                   type: number
+                  example: 400
                 attackSpeedCap:
                   type: number
+                  example: 2.5
             dodgeRecovery:
               type: object
               properties:
                 finesseConstant:
                   type: number
+                  example: 1000
         vitality:
           type: object
           properties:
@@ -1477,46 +1805,118 @@ components:
               properties:
                 vitalityDivisor:
                   type: number
+                  example: 100
             healingReceived:
               type: object
               properties:
                 vitalityDivisor:
                   type: number
+                  example: 1000
         accuracy:
           type: object
           properties:
             baseHitChance:
               type: number
+              description: "Base hit chance as decimal (0.90 = 90%)"
+              example: 0.90
             accuracyBonus:
               type: object
               properties:
                 precisionConstant:
                   type: number
+                  example: 300
                 maxAccuracyBonus:
                   type: number
+                  description: "Max bonus as decimal (0.15 = 15%)"
+                  example: 0.15
             weakPoint:
               type: object
               properties:
                 precisionMultiplier:
                   type: number
+                  example: 0.0015
         critical:
-          $ref: '#/components/schemas/CriticalConstants'
+          type: object
+          description: Critical hit and proc chance formulas
+          required:
+            - baseCritChance
+            - critChance
+            - procChance
+            - criticalDamageMultiplier
+          properties:
+            baseCritChance:
+              type: number
+              description: Base critical hit chance (decimal, 0.05 = 5%)
+              example: 0.05
+            critChance:
+              type: object
+              properties:
+                luckConstant:
+                  type: number
+                  example: 500
+                maxLuckCritBonus:
+                  type: number
+                  description: "Max luck crit bonus as decimal (0.30 = 30%)"
+                  example: 0.30
+            procChance:
+              type: object
+              properties:
+                luckDivisor:
+                  type: number
+                  example: 500
+            criticalDamageMultiplier:
+              type: number
+              description: Critical damage multiplier (1.50 = 150% damage)
+              example: 1.50
         defense:
-          $ref: '#/components/schemas/DefenseConstants'
+          type: object
+          description: Defense calculation constants
+          required:
+            - defenseConstant
+            - armorReductionPerPoint
+            - maxArmorReduction
+            - blockDamageReduction
+          properties:
+            defenseConstant:
+              type: object
+              properties:
+                baseConstant:
+                  type: number
+                  example: 200
+                levelMultiplier:
+                  type: number
+                  example: 15
+            armorReductionPerPoint:
+              type: number
+              description: Armor reduction per point (decimal, 0.001)
+              example: 0.001
+            maxArmorReduction:
+              type: number
+              description: Maximum armor reduction (decimal, 0.75 = 75%)
+              example: 0.75
+            blockDamageReduction:
+              type: number
+              description: Block damage reduction (decimal, 0.50 = 50%)
+              example: 0.50
         glancingHit:
           type: object
           properties:
             damageMultiplier:
               type: number
+              description: "Glancing hit damage as decimal (0.50 = 50%)"
+              example: 0.50
             canCrit:
               type: boolean
+              example: false
             canStagger:
               type: boolean
+              example: false
         status:
           type: object
           properties:
             resistanceConstant:
               type: number
+              example: 100
         statAllocationBands:
           type: array
           items:
@@ -1530,55 +1930,85 @@ components:
                 type: integer
               allocationCostPerPoint:
                 type: integer
+          example:
+            - { minLevel: 1, maxLevel: 10, pointsPerLevel: 2, allocationCostPerPoint: 1 }
+            - { minLevel: 11, maxLevel: 30, pointsPerLevel: 3, allocationCostPerPoint: 1 }
         statCaps:
           type: object
           properties:
             softCap:
               type: integer
+              example: 100
             hardCap:
               type: integer
+              example: 150
             softCapPenalty:
               type: number
+              description: "Penalty as decimal (0.50 = 50%)"
+              example: 0.50
         dodge:
           type: object
           properties:
             baseDodgeChance:
               type: number
+              description: "Base dodge chance as decimal (0.02 = 2%)"
+              example: 0.02
             maxDodgeChance:
               type: number
+              description: "Max dodge chance as decimal (0.40 = 40%)"
+              example: 0.40
         timing:
           type: object
           properties:
             globalCooldown:
               type: number
+              description: GCD in seconds
+              example: 1.5
             outOfCombatHpRegen:
               type: number
+              description: "HP regen rate as decimal (0.05 = 5% per tick)"
+              example: 0.05
             outOfCombatResourceRegen:
               type: number
+              description: "Resource regen rate as decimal (0.10 = 10% per tick)"
+              example: 0.10
             combatDropoffSeconds:
               type: number
+              example: 10
         stagger:
           type: object
           properties:
             baseStaggerThreshold:
               type: number
+              example: 100
             staggerRecoveryRate:
               type: number
+              example: 10
             staggerDurationSeconds:
               type: number
+              example: 2
             staggerImmunitySeconds:
               type: number
+              example: 3
         pvp:
           type: object
           properties:
             globalDamageMultiplier:
               type: number
+              description: "Global PvP damage reduction as decimal (0.60 = 60%)"
+              example: 0.60
             globalHealingMultiplier:
               type: number
+              description: "Global PvP healing reduction as decimal (0.70 = 70%)"
+              example: 0.70
             ccDurationMultiplier:
               type: number
+              description: "CC duration multiplier as decimal (0.50 = 50%)"
+              example: 0.50
             executeThresholdModifier:
               type: number
+              description: "Execute threshold modifier (additive, -0.10 = -10%)"
+              example: -0.10
         additionalConstants:
           type: object
           additionalProperties:
@@ -1586,4 +2016,9 @@ components:
               - type: number
               - type: boolean
               - type: string
-          description: Extensible map for additional constants
+          description: Extensible map for additional constants (ZoneServer defaults, etc.)
+          example:
+            defaultAttackRange: 2.5
+            targetRange: 30
+            defaultAttackDamage: 10
+            aoiRadius: 30
