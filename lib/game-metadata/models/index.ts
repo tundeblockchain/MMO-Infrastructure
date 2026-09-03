@@ -49,6 +49,7 @@ export {
   ConditionalCoefficient,
   StaggerCoefficients,
   PvPMultipliers,
+  ActivePhaseType,
   SkillTiming,
   ResourceEffect,
   SkillCoefficients,

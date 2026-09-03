@@ -6,7 +6,7 @@
 
 export { COMBAT_CONSTANTS_V1 } from './combat-constants';
 export { CLASSES_V1 } from './classes';
-export { SKILLS_V1 } from './skills';
+export { SKILLS_V1, SKILL_SPEC_VALUES } from './skills';
 export { STATUSES_V1 } from './statuses';
 export { ELEMENTS_V1 } from './elements';
 export { RESONANCES_V1 } from './resonances';

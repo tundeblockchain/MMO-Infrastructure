@@ -24,6 +24,7 @@ export interface ScalingVector {
     | 'healingPower'
     | 'maxHp'
     | 'missingHp'
+    | 'missingHpPercent'
     | 'armor'
     | 'level'
     | 'strength'
@@ -74,6 +75,20 @@ export interface StaggerCoefficients {
   staggerResist?: number;
   /** Whether this skill can stagger on hit */
   canStagger: boolean;
+  /** Per-stack stagger values for stack-based skills */
+  perStackStagger?: number;
+  /** Stagger per hit for multi-hit skills */
+  staggerPerHit?: number;
+  /** Bonus stagger for specific conditions (e.g., elite/boss, center hit) */
+  bonusStagger?: {
+    condition: string;
+    value: number;
+  };
+  /** Status buildup value (e.g., Armor Break, Burn, Freeze, Shock, Poison) */
+  statusBuildup?: {
+    status: string;
+    value: number;
+  };
 }
 
 /**
@@ -84,11 +99,47 @@ export interface PvPMultipliers {
   damageMultiplier?: number;
   /** Healing multiplier in PvP */
   healingMultiplier?: number;
-  /** Duration multiplier for effects in PvP */
+  /** Duration multiplier for effects in PvP (seconds override) */
   durationMultiplier?: number;
+  /** Duration override in seconds for PvP */
+  durationSeconds?: number;
   /** Cooldown multiplier in PvP (>1 = longer cooldown) */
   cooldownMultiplier?: number;
+  /** Cooldown override in seconds for PvP */
+  cooldownSeconds?: number;
+  /** Stagger multiplier in PvP */
+  staggerMultiplier?: number;
+  /** Resource generation/cost override */
+  resourceOverride?: {
+    resourceId: ResourceId;
+    amount: number;
+  };
+  /** Max targets/hits override for PvP */
+  maxTargets?: number;
+  /** Max hits per target override for PvP */
+  maxHitsPerTarget?: number;
+  /** Effect value override (e.g., crit bonus, range, etc.) */
+  effectOverrides?: Record<string, number>;
+  /** Additional status/debuff changes in PvP */
+  statusOverrides?: Record<string, number>;
+  /** Missing health cap for execute-type skills in PvP */
+  missingHealthCap?: number;
+  /** Exhausted debuff duration in PvP */
+  exhaustedDurationSeconds?: number;
 }
+
+/**
+ * Active phase type for special skill behaviors.
+ * - 'standard': Normal active duration in ms
+ * - 'hold': Channeled skill held until release (Brace)
+ * - 'stance': Stance maintained until cancelled (Dead Focus)
+ * - 'reaction': Automatic trigger, no active phase (Thermal Shock)
+ * - 'deploy': Placement/deployment action (Pulse Mine, Sanctuary)
+ * - 'buff': Instant buff application (Venom Edge)
+ * - 'summon': Summoning action (Phantom Double)
+ * - 'channel': Fixed duration channel (Mana Conduit)
+ */
+export type ActivePhaseType = 'standard' | 'hold' | 'stance' | 'reaction' | 'deploy' | 'buff' | 'summon' | 'channel';
 
 /**
  * Skill timing in milliseconds for precise combat sync.
@@ -96,10 +147,12 @@ export interface PvPMultipliers {
 export interface SkillTiming {
   /** Cast/windup time before skill activates (ms) */
   castMs: number;
-  /** Active/execution time of the skill (ms) */
+  /** Active/execution time of the skill (ms), or 0 for special phases */
   activeMs: number;
   /** Recovery/backswing time after skill completes (ms) */
   recoveryMs: number;
+  /** Type of active phase for special behaviors */
+  activePhaseType?: ActivePhaseType;
 }
 
 /**
@@ -174,6 +227,10 @@ export interface SkillDefinition {
   stagger?: StaggerCoefficients;
   /** PvP balance multipliers */
   pvpMultipliers?: PvPMultipliers;
+  /** Duration of anti-death effect in seconds (Divine Intervention) */
+  antiDeathDurationSeconds?: number;
+  /** Exhausted debuff duration in seconds after using skill */
+  exhaustedDurationSeconds?: number;
   /** Skill rank within the class (for unlock order) */
   unlockLevel: number;
   /** Icon asset path */
