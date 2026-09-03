@@ -127,6 +127,18 @@ function createFullCombatConstants(): CombatConstants {
       outOfCombatResourceRegen: 0.10,
       combatDropoffSeconds: 10,
     },
+    stagger: {
+      baseStaggerThreshold: 100,
+      staggerRecoveryRate: 10,
+      staggerDurationSeconds: 2,
+      staggerImmunitySeconds: 3,
+    },
+    pvp: {
+      globalDamageMultiplier: 0.60,
+      globalHealingMultiplier: 0.70,
+      ccDurationMultiplier: 0.50,
+      executeThresholdModifier: -0.10,
+    },
   };
 }
 

@@ -30,6 +30,8 @@ export {
   StatCapConstants,
   DodgeConstants,
   CombatTimingConstants,
+  StaggerConstants,
+  PvPConstants,
   CombatConstants,
 } from './combat-constants';
 
@@ -43,6 +45,13 @@ export {
 // Skill catalog
 export {
   ScalingVector,
+  PerStackCoefficients,
+  ConditionalCoefficient,
+  StaggerCoefficients,
+  PvPMultipliers,
+  ActivePhaseType,
+  SkillTiming,
+  ResourceEffect,
   SkillCoefficients,
   SkillDefinition,
 } from './skill';
