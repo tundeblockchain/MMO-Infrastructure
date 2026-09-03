@@ -1,8 +1,11 @@
 /**
- * Combat Constants Seed Data - MMO-5
+ * Combat Constants Seed Data - MMO-5, MMO-9
  *
  * All tunable combat math constants from the combat formula spec.
  * Percentages as decimals: 150% → 1.50, 15% → 0.15, 5% → 0.05
+ *
+ * v1: Initial combat constants (MMO-5)
+ * v2: Added additionalConstants for ZoneServer (MMO-9)
  */
 
 import { CombatConstants } from '../models';
@@ -123,5 +126,32 @@ export const COMBAT_CONSTANTS_V1: CombatConstants = {
     allocationCostBand3Cost: 3,
     allocationCostBand4Cost: 4,
     allocationCostBand5Cost: 5,
+  },
+};
+
+/**
+ * Combat Constants V2 - MMO-9
+ *
+ * Adds ZoneServer additionalConstants keys required for fail-close behavior.
+ * All v1 fields remain identical; only additionalConstants extended.
+ */
+export const COMBAT_CONSTANTS_V2: CombatConstants = {
+  ...COMBAT_CONSTANTS_V1,
+  additionalConstants: {
+    ...COMBAT_CONSTANTS_V1.additionalConstants,
+    defaultAttackRange: 2.5,
+    targetRange: 30,
+    defaultAttackDamage: 10,
+    defaultAttackCooldown: 1.5,
+    defaultMonsterHp: 100,
+    defaultMonsterSp: 50,
+    defaultMonsterMoveSpeed: 3.0,
+    monsterSpellRollChance: 0.01,
+    aoiRadius: 30,
+    lootDespawnSeconds: 60,
+    lootPickupRadius: 2.5,
+    lootVisibilityRadius: 30,
+    playerRespawnSeconds: 4,
+    monsterRespawnSeconds: 4,
   },
 };
