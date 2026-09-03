@@ -26,6 +26,10 @@ export function serverError(message = 'Internal server error'): APIGatewayProxyR
   return json(500, { error: message });
 }
 
+export function conflict(message: string): APIGatewayProxyResultV2 {
+  return json(409, { error: message });
+}
+
 export function getBearerToken(authorizationHeader?: string): string | null {
   if (!authorizationHeader) {
     return null;
