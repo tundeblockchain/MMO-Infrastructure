@@ -708,6 +708,7 @@ const ARCANIST_SKILLS: SkillDefinition[] = [
         { stat: 'intellect', coefficient: 0.70 },
       ],
       element: 'arcane',
+      appliesStatus: 'aether',
     },
     timing: { castMs: 300, activeMs: 100, recoveryMs: 300 },
     stagger: { staggerPower: 10, canStagger: true },
@@ -1098,7 +1099,11 @@ const MACHINIST_SKILLS: SkillDefinition[] = [
       },
     },
     timing: { castMs: 150, activeMs: 100, recoveryMs: 500 },
-    stagger: { staggerPower: 25, canStagger: true },
+    stagger: {
+      staggerPower: 25,
+      canStagger: true,
+      targetVariants: { turret: 25, drone: 35, mine: 65 },
+    },
     pvpMultipliers: {
       damageMultiplier: 0.70,
       maxTargets: 2,

@@ -89,6 +89,8 @@ export interface StaggerCoefficients {
     status: string;
     value: number;
   };
+  /** Per-target variant stagger values (e.g., turret/drone/mine for Remote Detonation) */
+  targetVariants?: Record<string, number>;
 }
 
 /**

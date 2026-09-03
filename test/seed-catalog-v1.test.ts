@@ -263,6 +263,13 @@ describe('Seed Catalog V1 - Exact Spec Values', () => {
       expect(remoteDetonation.stagger!.staggerPower).toBe(25);
     });
 
+    it('should have per-device stagger: turret 25, drone 35, mine 65', () => {
+      expect(remoteDetonation.stagger!.targetVariants).toBeDefined();
+      expect(remoteDetonation.stagger!.targetVariants!.turret).toBe(25);
+      expect(remoteDetonation.stagger!.targetVariants!.drone).toBe(35);
+      expect(remoteDetonation.stagger!.targetVariants!.mine).toBe(65);
+    });
+
     it('should have PvP damage 0.70', () => {
       expect(remoteDetonation.pvpMultipliers!.damageMultiplier).toBe(0.70);
     });
@@ -277,6 +284,14 @@ describe('Seed Catalog V1 - Exact Spec Values', () => {
 
     it('should have PvP duration 6s', () => {
       expect(huntersMark.pvpMultipliers!.durationSeconds).toBe(6);
+    });
+  });
+
+  describe('Aether Bolt - Applies Aether Status', () => {
+    const aetherBolt = SKILLS_V1.find(s => s.skillId === 'arcanist_aether_bolt')!;
+
+    it('should apply status aether', () => {
+      expect(aetherBolt.coefficients.appliesStatus).toBe('aether');
     });
   });
 
