@@ -92,6 +92,15 @@ After the Dev stage deploys, note CloudFormation outputs:
 | POST | `/characters` | Firebase or game JWT | Create character `{ "name": "..." }` |
 | POST | `/characters/{id}/enter` | Game or Firebase JWT | Enter world + scoped JWT + zone host |
 | PUT | `/characters/{id}` | `X-Internal-Api-Key` | Save character (ZoneServer) |
+| GET | `/catalog/versions/latest` | None | Get latest published version per catalog type |
+| GET | `/catalog/versions` | None | List all published catalog versions |
+| GET | `/catalog/{type}/v/{ver}` | None | Get catalog data by type and version |
+| POST | `/catalog/{type}/versions` | Firebase ID token | Publish new catalog version |
+
+## Documentation
+
+- **[Catalog API Guide](docs/catalog-api.md)** — DynamoDB key design, versioning rules, and endpoint reference
+- **[OpenAPI Specification](contracts/openapi.yaml)** — Complete request/response schemas
 
 ## Local development
 
