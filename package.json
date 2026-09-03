@@ -5,16 +5,22 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
+    "test": "jest",
+    "test:coverage": "jest --coverage",
     "cdk": "cdk",
     "synth": "npm run build && cdk synth",
     "deploy:pipeline": "npm run build && cdk deploy PipelineStack"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.147",
+    "@types/jest": "^30.0.0",
     "@types/jsonwebtoken": "^9.0.9",
     "@types/node": "^22.13.10",
     "aws-cdk": "^2.259.0",
+    "aws-sdk-client-mock": "^4.1.0",
     "esbuild": "^0.25.1",
+    "jest": "^30.5.1",
+    "ts-jest": "^29.4.12",
     "typescript": "^5.8.2"
   },
   "dependencies": {

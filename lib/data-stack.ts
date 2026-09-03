@@ -39,6 +39,15 @@ export class DataStack extends cdk.Stack {
       projectionType: dynamodb.ProjectionType.ALL,
     });
 
+    // GSI2: For querying game metadata catalogs by status (published/draft)
+    // Used by versioned catalog system (MMO-4)
+    this.table.addGlobalSecondaryIndex({
+      indexName: 'GSI2',
+      partitionKey: { name: 'GSI2PK', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'GSI2SK', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
     // Upload Firebase service account JSON to this secret after first deploy.
     this.firebaseSecret = new secretsmanager.Secret(this, 'FirebaseServiceAccount', {
       secretName: `${prefix}/firebase-service-account`,
