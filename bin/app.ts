@@ -5,10 +5,19 @@ import { PipelineStack } from '../lib/pipeline-stack';
 
 const app = new cdk.App();
 
-const githubConnectionArn = app.node.tryGetContext('githubConnectionArn') as string | undefined;
-const githubOwner = app.node.tryGetContext('githubOwner') as string | undefined;
-const githubRepo = app.node.tryGetContext('githubRepo') as string | undefined;
-const githubBranch = (app.node.tryGetContext('githubBranch') as string | undefined) ?? 'develop';
+const githubConnectionArn =
+  (app.node.tryGetContext('githubConnectionArn') as string | undefined) ??
+  process.env.GITHUB_CONNECTION_ARN;
+const githubOwner =
+  (app.node.tryGetContext('githubOwner') as string | undefined) ??
+  process.env.GITHUB_OWNER;
+const githubRepo =
+  (app.node.tryGetContext('githubRepo') as string | undefined) ??
+  process.env.GITHUB_REPO;
+const githubBranch =
+  (app.node.tryGetContext('githubBranch') as string | undefined) ??
+  process.env.GITHUB_BRANCH ??
+  'master';
 
 if (!githubConnectionArn) {
   throw new Error(

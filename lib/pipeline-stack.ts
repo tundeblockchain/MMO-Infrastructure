@@ -21,13 +21,23 @@ export class PipelineStack extends cdk.Stack {
       connectionArn: props.githubConnectionArn,
     });
 
+    const synthContextArgs = [
+      `-c githubConnectionArn=\${GITHUB_CONNECTION_ARN}`,
+      `-c githubOwner=${props.githubOwner}`,
+      `-c githubRepo=${props.githubRepo}`,
+      `-c githubBranch=${props.githubBranch}`,
+    ].join(' ');
+
     const synth = new ShellStep('Synth', {
       input: source,
+      env: {
+        GITHUB_CONNECTION_ARN: props.githubConnectionArn,
+      },
       commands: [
         'node --version',
         'npm ci',
         'npm run build',
-        'npx cdk synth',
+        `npx cdk synth ${synthContextArgs}`,
       ],
       primaryOutputDirectory: 'cdk.out',
     });
