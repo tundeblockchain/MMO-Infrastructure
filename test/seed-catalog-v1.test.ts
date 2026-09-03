@@ -602,6 +602,11 @@ describe('Combat Constants V2 - MMO-9 ZoneServer additionalConstants', () => {
       'defaultMonsterHp',
       'defaultMonsterSp',
       'defaultMonsterMoveSpeed',
+      'defaultMonsterDamage',
+      'defaultMonsterAggroRange',
+      'defaultMonsterAttackRange',
+      'defaultMonsterXp',
+      'defaultMonsterMoney',
       'monsterSpellRollChance',
       'aoiRadius',
       'lootDespawnSeconds',
@@ -625,6 +630,11 @@ describe('Combat Constants V2 - MMO-9 ZoneServer additionalConstants', () => {
       expect(ac.defaultMonsterHp).toBe(100);
       expect(ac.defaultMonsterSp).toBe(50);
       expect(ac.defaultMonsterMoveSpeed).toBe(3.0);
+      expect(ac.defaultMonsterDamage).toBe(10);
+      expect(ac.defaultMonsterAggroRange).toBe(10);
+      expect(ac.defaultMonsterAttackRange).toBe(2.0);
+      expect(ac.defaultMonsterXp).toBe(25);
+      expect(ac.defaultMonsterMoney).toBe(5);
       expect(ac.monsterSpellRollChance).toBe(0.01);
       expect(ac.aoiRadius).toBe(30);
       expect(ac.lootDespawnSeconds).toBe(60);
