@@ -57,45 +57,224 @@ export type ClassId =
 // Combat Constants
 // ============================================================================
 
-export interface CombatConstants {
-  /** Critical hit damage multiplier (e.g., 1.50 = 150% damage) */
+/**
+ * Power scaling coefficients for derived stat calculations.
+ * All multipliers/divisors stored as decimals (150% = 1.50).
+ */
+export interface PowerScalingConstants {
+  /** PhysicalPower = Strength * strengthMultiplier + Level * levelMultiplier */
+  physicalPower: {
+    strengthMultiplier: number;
+    levelMultiplier: number;
+  };
+  /** SpellPower = Intellect * intellectMultiplier + Level * levelMultiplier */
+  spellPower: {
+    intellectMultiplier: number;
+    levelMultiplier: number;
+  };
+  /** TechPower = Tech * techMultiplier + Level * levelMultiplier */
+  techPower: {
+    techMultiplier: number;
+    levelMultiplier: number;
+  };
+  /** DevicePower = Tech / techDivisor */
+  devicePower: {
+    techDivisor: number;
+  };
+}
+
+/**
+ * Attack speed and dodge recovery formulas.
+ * AttackSpeed = Finesse / (Finesse + finesseConstant), capped at attackSpeedCap
+ * DodgeRecovery = Finesse / (Finesse + finesseConstant)
+ */
+export interface SpeedConstants {
+  attackSpeed: {
+    finesseConstant: number;
+    attackSpeedCap: number;
+  };
+  dodgeRecovery: {
+    finesseConstant: number;
+  };
+}
+
+/**
+ * Health and healing derived stat formulas.
+ * MaxHP bonus = Vitality / vitalityDivisor
+ * HealingReceived bonus = Vitality / vitalityDivisor
+ */
+export interface VitalityConstants {
+  maxHp: {
+    vitalityDivisor: number;
+  };
+  healingReceived: {
+    vitalityDivisor: number;
+  };
+}
+
+/**
+ * Accuracy and hit chance formulas.
+ * HitChance = baseHitChance + AccuracyBonus
+ * AccuracyBonus = (Precision / (Precision + precisionConstant)) * maxAccuracyBonus
+ * WeakPointChance = Precision * precisionMultiplier
+ */
+export interface AccuracyConstants {
+  baseHitChance: number;
+  accuracyBonus: {
+    precisionConstant: number;
+    maxAccuracyBonus: number;
+  };
+  weakPoint: {
+    precisionMultiplier: number;
+  };
+}
+
+/**
+ * Critical hit and proc chance formulas.
+ * CritChance = baseCritChance + (Luck / (Luck + luckConstant)) * maxLuckCritBonus
+ * ProcChance = Luck / luckDivisor
+ */
+export interface CriticalConstants {
+  baseCritChance: number;
+  critChance: {
+    luckConstant: number;
+    maxLuckCritBonus: number;
+  };
+  procChance: {
+    luckDivisor: number;
+  };
   criticalDamageMultiplier: number;
-  /** Base critical hit chance (e.g., 0.05 = 5%) */
-  baseCriticalChance: number;
-  /** Damage reduction per point of armor */
+}
+
+/**
+ * Defense calculation constants.
+ * DefenseConstant = baseConstant + (AttackerLevel * levelMultiplier)
+ * DamageReduction = Defense / (Defense + DefenseConstant)
+ */
+export interface DefenseConstants {
+  defenseConstant: {
+    baseConstant: number;
+    levelMultiplier: number;
+  };
   armorReductionPerPoint: number;
-  /** Maximum damage reduction from armor (e.g., 0.75 = 75%) */
   maxArmorReduction: number;
-  /** Base dodge chance (e.g., 0.02 = 2%) */
-  baseDodgeChance: number;
-  /** Maximum dodge chance cap (e.g., 0.40 = 40%) */
-  maxDodgeChance: number;
-  /** Block damage reduction (e.g., 0.50 = 50%) */
   blockDamageReduction: number;
-  /** Global cooldown in seconds */
+}
+
+/**
+ * Glancing hit mechanics.
+ * Glancing hits deal reduced damage, cannot crit, and do not stagger.
+ */
+export interface GlancingHitConstants {
+  damageMultiplier: number;
+  canCrit: boolean;
+  canStagger: boolean;
+}
+
+/**
+ * Status effect application formula.
+ * ApplicationChance = StatusPower / (StatusPower + TargetStatusResistance + resistanceConstant)
+ */
+export interface StatusConstants {
+  resistanceConstant: number;
+}
+
+/**
+ * Stat point allocation rules per level band.
+ */
+export interface StatAllocationBand {
+  minLevel: number;
+  maxLevel: number;
+  pointsPerLevel: number;
+  allocationCostPerPoint: number;
+}
+
+/**
+ * Stat cap configuration.
+ */
+export interface StatCapConstants {
+  softCap: number;
+  hardCap: number;
+  softCapPenalty: number;
+}
+
+/**
+ * Dodge mechanics constants.
+ */
+export interface DodgeConstants {
+  baseDodgeChance: number;
+  maxDodgeChance: number;
+}
+
+/**
+ * Combat timing constants.
+ */
+export interface CombatTimingConstants {
   globalCooldown: number;
-  /** HP regeneration per second out of combat (e.g., 0.05 = 5% max HP) */
   outOfCombatHpRegen: number;
-  /** Resource regeneration per second out of combat (e.g., 0.10 = 10% max) */
   outOfCombatResourceRegen: number;
-  /** Seconds until out-of-combat status */
   combatDropoffSeconds: number;
+}
+
+/**
+ * Complete combat constants catalog.
+ * All percentages stored as decimals (150% = 1.50, 15% = 0.15).
+ * Extensible via additionalConstants map for future additions.
+ */
+export interface CombatConstants {
+  powerScaling: PowerScalingConstants;
+  speed: SpeedConstants;
+  vitality: VitalityConstants;
+  accuracy: AccuracyConstants;
+  critical: CriticalConstants;
+  defense: DefenseConstants;
+  glancingHit: GlancingHitConstants;
+  status: StatusConstants;
+  statAllocationBands: StatAllocationBand[];
+  statCaps: StatCapConstants;
+  dodge: DodgeConstants;
+  timing: CombatTimingConstants;
+  /**
+   * Extensible map for additional constants that may be added in future versions.
+   * Allows adding new tunable values without schema changes.
+   */
+  additionalConstants?: Record<string, number | boolean | string>;
 }
 
 // ============================================================================
 // Class Catalog
 // ============================================================================
 
-export interface ClassStartingStats {
+/**
+ * Seven primary stats for character builds.
+ */
+export interface PrimaryStats {
+  /** Physical damage scaling */
+  strength: number;
+  /** Attack speed, dodge recovery */
+  finesse: number;
+  /** Max HP, healing received */
+  vitality: number;
+  /** Spell power scaling */
+  intellect: number;
+  /** Hit chance, weak point chance */
+  precision: number;
+  /** Crit chance, proc chance */
+  luck: number;
+  /** Tech/device power scaling */
+  tech: number;
+}
+
+export interface ClassStartingStats extends PrimaryStats {
   /** Base health points */
   hp: number;
   /** Base resource pool size */
   resourcePool: number;
   /** Base armor value */
   armor: number;
-  /** Base attack power */
+  /** Base attack power (derived, but stored for reference) */
   attackPower: number;
-  /** Base spell power */
+  /** Base spell power (derived, but stored for reference) */
   spellPower: number;
   /** Base movement speed (units per second) */
   movementSpeed: number;
@@ -126,7 +305,20 @@ export interface ClassDefinition {
 
 export interface ScalingVector {
   /** Stat that contributes to scaling */
-  stat: 'attackPower' | 'spellPower' | 'maxHp' | 'armor' | 'level';
+  stat:
+    | 'attackPower'
+    | 'spellPower'
+    | 'techPower'
+    | 'maxHp'
+    | 'armor'
+    | 'level'
+    | 'strength'
+    | 'finesse'
+    | 'vitality'
+    | 'intellect'
+    | 'precision'
+    | 'luck'
+    | 'tech';
   /** Coefficient for this stat (e.g., 0.5 = 50% of stat value) */
   coefficient: number;
 }
