@@ -196,17 +196,33 @@ paths:
                 $ref: '#/components/schemas/CatalogData'
               example:
                 catalogType: class
-                version: 2
+                version: 1
                 status: published
                 createdAt: "2024-06-15T10:30:00.000Z"
                 publishedAt: "2024-06-15T10:30:00.000Z"
                 createdBy: firebase-uid-abc123
-                releaseNotes: Added Machinist class
+                releaseNotes: Initial class definitions
                 data:
                   - classId: vanguard
                     displayName: Vanguard
-                  - classId: machinist
-                    displayName: Machinist
+                    description: A stalwart frontline defender who protects allies and controls the battlefield.
+                    primaryResource: resolve
+                    startingStats:
+                      strength: 12
+                      finesse: 7
+                      vitality: 12
+                      intellect: 4
+                      precision: 6
+                      luck: 5
+                      tech: 4
+                      hp: 150
+                      resourcePool: 100
+                      armor: 20
+                      attackPower: 26
+                      spellPower: 9
+                      movementSpeed: 5.0
+                    resonance: valor
+                    roles: [tank, dps]
         '400':
           description: Invalid catalog type or version number
           content:
@@ -268,19 +284,46 @@ paths:
                   data:
                     - classId: vanguard
                       displayName: Vanguard
-                      baseHp: 150
-                    - classId: ranger
-                      displayName: Ranger
-                      baseHp: 100
+                      description: A stalwart frontline defender who protects allies and controls the battlefield.
+                      primaryResource: resolve
+                      startingStats:
+                        strength: 12
+                        finesse: 7
+                        vitality: 12
+                        intellect: 4
+                        precision: 6
+                        luck: 5
+                        tech: 4
+                        hp: 150
+                        resourcePool: 100
+                        armor: 20
+                        attackPower: 26
+                        spellPower: 9
+                        movementSpeed: 5.0
+                      resonance: valor
+                      roles: [tank, dps]
                   releaseNotes: Initial class definitions
               combatConstants:
                 summary: Publish combat constants
                 value:
                   data:
                     powerScaling:
-                      baseDamageMultiplier: 1.0
-                      criticalMultiplier: 1.5
-                  releaseNotes: Balance update
+                      physicalPower:
+                        strengthMultiplier: 2
+                        levelMultiplier: 1.5
+                      spellPower:
+                        intellectMultiplier: 2
+                        levelMultiplier: 1
+                    critical:
+                      baseCritChance: 0.05
+                      criticalDamageMultiplier: 1.50
+                    defense:
+                      armorReductionPerPoint: 0.001
+                      maxArmorReduction: 0.75
+                    additionalConstants:
+                      defaultAttackRange: 2.5
+                      targetRange: 30
+                  releaseNotes: Combat constants v2
       responses:
         '201':
           description: Catalog version published
@@ -290,12 +333,12 @@ paths:
                 $ref: '#/components/schemas/PublishedCatalogResponse'
               example:
                 catalogType: class
-                version: 3
+                version: 2
                 status: published
                 createdAt: "2024-06-16T08:00:00.000Z"
                 publishedAt: "2024-06-16T08:00:00.000Z"
                 createdBy: firebase-uid-abc123
-                releaseNotes: Added new class abilities
+                releaseNotes: Updated class starting stats
         '400':
           description: Invalid request
           content:

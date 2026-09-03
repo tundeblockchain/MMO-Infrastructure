@@ -45,17 +45,27 @@ The version number is **zero-padded to 8 digits** so that DynamoDB's string sort
 ```json
 {
   "PK": "CATALOG#class",
-  "SK": "VERSION#00000002",
+  "SK": "VERSION#00000001",
   "catalogType": "class",
-  "version": 2,
+  "version": 1,
   "status": "published",
   "createdAt": "2024-06-15T10:30:00.000Z",
   "publishedAt": "2024-06-15T10:30:00.000Z",
   "createdBy": "firebase-uid-abc123",
-  "releaseNotes": "Added Machinist class",
+  "releaseNotes": "Initial class definitions",
   "data": [
-    { "classId": "vanguard", "displayName": "Vanguard", ... },
-    { "classId": "machinist", "displayName": "Machinist", ... }
+    {
+      "classId": "vanguard",
+      "displayName": "Vanguard",
+      "primaryResource": "resolve",
+      "startingStats": {
+        "strength": 12, "finesse": 7, "vitality": 12, "intellect": 4,
+        "precision": 6, "luck": 5, "tech": 4, "hp": 150, "resourcePool": 100,
+        "armor": 20, "attackPower": 26, "spellPower": 9, "movementSpeed": 5.0
+      },
+      "resonance": "valor",
+      "roles": ["tank", "dps"]
+    }
   ]
 }
 ```
@@ -175,13 +185,37 @@ Returns the full catalog data for a specific version.
 ```json
 {
   "catalogType": "class",
-  "version": 2,
+  "version": 1,
   "status": "published",
   "createdAt": "2024-06-15T10:30:00.000Z",
   "publishedAt": "2024-06-15T10:30:00.000Z",
   "createdBy": "firebase-uid-abc123",
-  "releaseNotes": "Added Machinist class",
-  "data": [...]
+  "releaseNotes": "Initial class definitions",
+  "data": [
+    {
+      "classId": "vanguard",
+      "displayName": "Vanguard",
+      "description": "A stalwart frontline defender...",
+      "primaryResource": "resolve",
+      "startingStats": {
+        "strength": 12,
+        "finesse": 7,
+        "vitality": 12,
+        "intellect": 4,
+        "precision": 6,
+        "luck": 5,
+        "tech": 4,
+        "hp": 150,
+        "resourcePool": 100,
+        "armor": 20,
+        "attackPower": 26,
+        "spellPower": 9,
+        "movementSpeed": 5.0
+      },
+      "resonance": "valor",
+      "roles": ["tank", "dps"]
+    }
+  ]
 }
 ```
 
@@ -215,27 +249,67 @@ Creates and publishes a new version of the catalog. The version number is automa
 
 **Request Body:**
 
+- For `combat-constants`, `data` must be an **object**
+- For all other types (`class`, `skill`, `status`, `element`, `resonance`), `data` must be an **array**
+
+Example for `class`:
+
 ```json
 {
-  "data": [...],
-  "releaseNotes": "Optional description of changes"
+  "data": [
+    {
+      "classId": "vanguard",
+      "displayName": "Vanguard",
+      "description": "A stalwart frontline defender...",
+      "primaryResource": "resolve",
+      "startingStats": {
+        "strength": 12, "finesse": 7, "vitality": 12, "intellect": 4,
+        "precision": 6, "luck": 5, "tech": 4, "hp": 150, "resourcePool": 100,
+        "armor": 20, "attackPower": 26, "spellPower": 9, "movementSpeed": 5.0
+      },
+      "resonance": "valor",
+      "roles": ["tank", "dps"]
+    }
+  ],
+  "releaseNotes": "Initial class definitions"
 }
 ```
 
-- For `combat-constants`, `data` must be an **object**
-- For all other types, `data` must be an **array**
+Example for `combat-constants`:
+
+```json
+{
+  "data": {
+    "powerScaling": {
+      "physicalPower": { "strengthMultiplier": 2, "levelMultiplier": 1.5 },
+      "spellPower": { "intellectMultiplier": 2, "levelMultiplier": 1 }
+    },
+    "critical": {
+      "baseCritChance": 0.05,
+      "criticalDamageMultiplier": 1.50
+    },
+    "additionalConstants": {
+      "defaultAttackRange": 2.5,
+      "targetRange": 30
+    }
+  },
+  "releaseNotes": "Combat constants v2"
+}
+```
+
+Note: Percentages are expressed as decimals (e.g., 150% → `1.50`, 5% → `0.05`).
 
 **Response (201):**
 
 ```json
 {
   "catalogType": "class",
-  "version": 3,
+  "version": 2,
   "status": "published",
   "createdAt": "2024-06-16T08:00:00.000Z",
   "publishedAt": "2024-06-16T08:00:00.000Z",
   "createdBy": "firebase-uid-abc123",
-  "releaseNotes": "Skill balance update"
+  "releaseNotes": "Updated starting stats"
 }
 ```
 
