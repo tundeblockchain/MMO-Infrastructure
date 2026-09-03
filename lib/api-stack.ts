@@ -82,6 +82,12 @@ export class ApiStack extends cdk.Stack {
       description: 'Save character snapshot (ZoneServer or internal)',
     });
 
+    const catalogFn = createLambda('CatalogFn', {
+      functionName: `${prefix}-catalog`,
+      entry: path.join(lambdasDir, 'catalog', 'handler.ts'),
+      description: 'Read-only game metadata catalog API for ZoneServer',
+    });
+
     const lambdaFunctions = [authSessionFn, charactersFn, charactersSaveFn];
 
     for (const fn of lambdaFunctions) {
@@ -89,6 +95,8 @@ export class ApiStack extends cdk.Stack {
       props.firebaseSecret.grantRead(fn);
       props.gameJwtSecret.grantRead(fn);
     }
+
+    props.table.grantReadData(catalogFn);
 
     props.internalSaveApiSecret.grantRead(charactersSaveFn);
     charactersSaveFn.addEnvironment(
@@ -147,6 +155,29 @@ export class ApiStack extends cdk.Stack {
       path: '/characters/{characterId}',
       methods: [apigwv2.HttpMethod.PUT],
       integration: saveIntegration,
+    });
+
+    const catalogIntegration = new apigwv2Integrations.HttpLambdaIntegration(
+      'CatalogIntegration',
+      catalogFn
+    );
+
+    this.httpApi.addRoutes({
+      path: '/catalog/versions',
+      methods: [apigwv2.HttpMethod.GET],
+      integration: catalogIntegration,
+    });
+
+    this.httpApi.addRoutes({
+      path: '/catalog/versions/latest',
+      methods: [apigwv2.HttpMethod.GET],
+      integration: catalogIntegration,
+    });
+
+    this.httpApi.addRoutes({
+      path: '/catalog/{catalogType}/v/{version}',
+      methods: [apigwv2.HttpMethod.GET],
+      integration: catalogIntegration,
     });
 
     new cdk.CfnOutput(this, 'ApiUrl', {
