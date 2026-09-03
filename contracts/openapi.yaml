@@ -1,8 +1,14 @@
 openapi: 3.0.3
 info:
   title: MMO Character API
-  version: 0.1.0
-  description: Phase 4 persistence API (Firebase Auth + game session JWT)
+  version: 0.2.0
+  description: |
+    MMO backend API for character management, authentication, and game metadata catalogs.
+    
+    **Authentication:**
+    - Character endpoints use Firebase ID tokens or game session JWTs
+    - Catalog write endpoints require Firebase ID tokens
+    - Catalog read endpoints are unauthenticated (for ZoneServer caching)
 servers:
   - url: https://{apiId}.execute-api.{region}.amazonaws.com
     variables:
@@ -10,9 +16,19 @@ servers:
         default: example
       region:
         default: eu-west-2
+
+tags:
+  - name: auth
+    description: Authentication and session management
+  - name: characters
+    description: Character creation, listing, and world entry
+  - name: catalog
+    description: Versioned game metadata catalogs
+
 paths:
   /auth/session:
     post:
+      tags: [auth]
       summary: Exchange Firebase ID token for game session JWT
       security:
         - bearerAuth: []
@@ -27,8 +43,10 @@ paths:
       responses:
         '200':
           description: Game session issued
+
   /characters:
     get:
+      tags: [characters]
       summary: List characters for authenticated account
       security:
         - bearerAuth: []
@@ -36,6 +54,7 @@ paths:
         '200':
           description: Character list
     post:
+      tags: [characters]
       summary: Create a character
       security:
         - bearerAuth: []
@@ -54,8 +73,10 @@ paths:
       responses:
         '201':
           description: Character created
+
   /characters/{characterId}/enter:
     post:
+      tags: [characters]
       summary: Enter world — returns scoped JWT and zone connection info
       security:
         - bearerAuth: []
@@ -69,8 +90,10 @@ paths:
       responses:
         '200':
           description: Enter world payload
+
   /characters/{characterId}:
     put:
+      tags: [characters]
       summary: Save character snapshot (ZoneServer internal)
       parameters:
         - name: characterId
@@ -93,13 +116,387 @@ paths:
       responses:
         '200':
           description: Character saved
+
+  /catalog/versions:
+    get:
+      tags: [catalog]
+      summary: List all published catalog versions
+      description: |
+        Returns metadata for all published catalog versions across all catalog types.
+        Useful for admin tools and debugging. Does not include the actual catalog data.
+      responses:
+        '200':
+          description: List of published versions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogVersionList'
+              example:
+                versions:
+                  - catalogType: class
+                    version: 2
+                    status: published
+                    publishedAt: "2024-06-15T10:30:00.000Z"
+                  - catalogType: combat-constants
+                    version: 1
+                    status: published
+                    publishedAt: "2024-06-01T00:00:00.000Z"
+
+  /catalog/versions/latest:
+    get:
+      tags: [catalog]
+      summary: Get latest published version for each catalog type
+      description: |
+        Returns the current highest published version number for each catalog type.
+        ZoneServer calls this at boot to pin catalog versions for the session.
+      responses:
+        '200':
+          description: Latest version numbers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LatestVersions'
+              example:
+                versions:
+                  combat-constants: 3
+                  class: 2
+                  skill: 1
+                  status: 1
+                  element: 1
+                  resonance: 1
+                timestamp: "2024-06-15T10:30:00.000Z"
+
+  /catalog/{catalogType}/v/{version}:
+    get:
+      tags: [catalog]
+      summary: Get catalog data by type and version
+      description: |
+        Returns the full catalog data for a specific published version.
+        Returns 404 if the version doesn't exist or is not published (draft versions are hidden).
+      parameters:
+        - name: catalogType
+          in: path
+          required: true
+          description: Type of catalog to retrieve
+          schema:
+            $ref: '#/components/schemas/CatalogType'
+        - name: version
+          in: path
+          required: true
+          description: Version number (must be a positive integer)
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Catalog data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogData'
+              example:
+                catalogType: class
+                version: 2
+                status: published
+                createdAt: "2024-06-15T10:30:00.000Z"
+                publishedAt: "2024-06-15T10:30:00.000Z"
+                createdBy: firebase-uid-abc123
+                releaseNotes: Added Machinist class
+                data:
+                  - classId: vanguard
+                    displayName: Vanguard
+                  - classId: machinist
+                    displayName: Machinist
+        '400':
+          description: Invalid catalog type or version number
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalidType:
+                  summary: Invalid catalog type
+                  value:
+                    error: "Invalid catalog type: weapons. Valid types: combat-constants, class, skill, status, element, resonance"
+                invalidVersion:
+                  summary: Invalid version
+                  value:
+                    error: "Version must be a positive integer"
+        '404':
+          description: Version not found or not published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Catalog class version 99 not found or not published"
+
+  /catalog/{catalogType}/versions:
+    post:
+      tags: [catalog]
+      summary: Publish a new catalog version
+      description: |
+        Creates and publishes a new version of the specified catalog type.
+        
+        **Authentication:** Requires a valid Firebase ID token.
+        
+        **Version allocation:** The next version number is automatically assigned.
+        Published versions are immutable — you cannot modify them after creation.
+        
+        **Race conditions:** If two requests race to create the same version number,
+        one will succeed and the other will receive a 409 Conflict. Retry the request
+        to get the next available version.
+      security:
+        - firebaseAuth: []
+      parameters:
+        - name: catalogType
+          in: path
+          required: true
+          description: Type of catalog to publish
+          schema:
+            $ref: '#/components/schemas/CatalogType'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishCatalogRequest'
+            examples:
+              classData:
+                summary: Publish class definitions
+                value:
+                  data:
+                    - classId: vanguard
+                      displayName: Vanguard
+                      baseHp: 150
+                    - classId: ranger
+                      displayName: Ranger
+                      baseHp: 100
+                  releaseNotes: Initial class definitions
+              combatConstants:
+                summary: Publish combat constants
+                value:
+                  data:
+                    powerScaling:
+                      baseDamageMultiplier: 1.0
+                      criticalMultiplier: 1.5
+                  releaseNotes: Balance update
+      responses:
+        '201':
+          description: Catalog version published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublishedCatalogResponse'
+              example:
+                catalogType: class
+                version: 3
+                status: published
+                createdAt: "2024-06-16T08:00:00.000Z"
+                publishedAt: "2024-06-16T08:00:00.000Z"
+                createdBy: firebase-uid-abc123
+                releaseNotes: Added new class abilities
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalidType:
+                  summary: Invalid catalog type
+                  value:
+                    error: "Invalid catalog type: weapons. Valid types: combat-constants, class, skill, status, element, resonance"
+                invalidJson:
+                  summary: Invalid JSON body
+                  value:
+                    error: "Request body must be valid JSON"
+                missingData:
+                  summary: Missing data field
+                  value:
+                    error: "Catalog data is required"
+                wrongFormat:
+                  summary: Wrong data format
+                  value:
+                    error: "class data must be an array"
+        '401':
+          description: Missing or invalid Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Valid Firebase ID token required"
+        '409':
+          description: Version conflict (race condition)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Version 3 already exists for class. Retry to allocate a new version."
+
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: Game session JWT or Firebase ID token
+    firebaseAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Firebase ID token (required for catalog writes)
+
   schemas:
+    CatalogType:
+      type: string
+      enum:
+        - combat-constants
+        - class
+        - skill
+        - status
+        - element
+        - resonance
+      description: |
+        Type of game metadata catalog:
+        - **combat-constants**: Global damage formulas and scaling factors (object)
+        - **class**: Playable class definitions (array)
+        - **skill**: Skill definitions with damage, costs, cooldowns (array)
+        - **status**: Buff/debuff effect definitions (array)
+        - **element**: Elemental damage types (array)
+        - **resonance**: Class synergy mechanics (array)
+
+    CatalogVersionSummary:
+      type: object
+      required:
+        - catalogType
+        - version
+        - status
+      properties:
+        catalogType:
+          $ref: '#/components/schemas/CatalogType'
+        version:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum: [published]
+        publishedAt:
+          type: string
+          format: date-time
+
+    CatalogVersionList:
+      type: object
+      required:
+        - versions
+      properties:
+        versions:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogVersionSummary'
+
+    LatestVersions:
+      type: object
+      required:
+        - versions
+        - timestamp
+      properties:
+        versions:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 1
+          description: Map of catalog type to latest published version number
+        timestamp:
+          type: string
+          format: date-time
+          description: Server timestamp when versions were retrieved
+
+    CatalogData:
+      type: object
+      required:
+        - catalogType
+        - version
+        - status
+        - createdAt
+        - createdBy
+        - data
+      properties:
+        catalogType:
+          $ref: '#/components/schemas/CatalogType'
+        version:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum: [published]
+        createdAt:
+          type: string
+          format: date-time
+        publishedAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+          description: Firebase UID of the user who published this version
+        releaseNotes:
+          type: string
+          description: Optional description of changes in this version
+        data:
+          oneOf:
+            - type: object
+              description: Object for combat-constants
+            - type: array
+              description: Array for class, skill, status, element, resonance
+
+    PublishCatalogRequest:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          oneOf:
+            - type: object
+              description: Object for combat-constants catalog
+            - type: array
+              description: Array for class, skill, status, element, resonance catalogs
+        releaseNotes:
+          type: string
+          description: Optional description of changes in this version
+
+    PublishedCatalogResponse:
+      type: object
+      required:
+        - catalogType
+        - version
+        - status
+        - createdAt
+        - publishedAt
+        - createdBy
+      properties:
+        catalogType:
+          $ref: '#/components/schemas/CatalogType'
+        version:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum: [published]
+        createdAt:
+          type: string
+          format: date-time
+        publishedAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+          description: Firebase UID of the user who published this version
+        releaseNotes:
+          type: string
+          description: Optional description of changes
+
     CharacterRecord:
       type: object
       required:
@@ -134,3 +531,12 @@ components:
           type: number
         z:
           type: number
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
