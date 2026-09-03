@@ -151,6 +151,8 @@ export const COMBAT_CONSTANTS_V2: CombatConstants = {
     defaultMonsterAttackRange: 2.0,
     defaultMonsterXp: 25,
     defaultMonsterMoney: 5,
+    defaultMonsterAttackCooldown: 2.0,
+    defaultMonsterLeashRange: 20,
     monsterSpellRollChance: 0.01,
     aoiRadius: 30,
     lootDespawnSeconds: 60,
