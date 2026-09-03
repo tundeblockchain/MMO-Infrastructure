@@ -24,7 +24,7 @@ import {
   ResonanceCatalog,
   GameCatalog,
   CatalogStatus,
-} from './models';
+} from './models/index';
 
 // ============================================================================
 // DynamoDB Key Structure

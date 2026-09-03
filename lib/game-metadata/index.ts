@@ -4,5 +4,5 @@
  * Versioned game data catalogs with immutability enforcement.
  */
 
-export * from './models';
+export * from './models/index';
 export * from './repository';
