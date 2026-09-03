@@ -26,6 +26,9 @@ jobs:
       - name: Build TypeScript
         run: npm run build
 
+      - name: Run Tests
+        run: npm test
+
       - name: CDK Synth (no deploy)
         run: |
           npx cdk synth \
