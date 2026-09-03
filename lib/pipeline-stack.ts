@@ -1,4 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import { pipelines } from 'aws-cdk-lib';
 import { CodePipelineSource, ManualApprovalStep, ShellStep } from 'aws-cdk-lib/pipelines';
 import { Construct } from 'constructs';
@@ -81,5 +82,33 @@ export class PipelineStack extends cdk.Stack {
     pipeline.addStage(prodStage, {
       pre: [new ManualApprovalStep('PromoteToProd')],
     });
+
+    pipeline.buildPipeline();
+
+    this.grantCodeBuildStartBuildToActionRoles(pipeline);
+  }
+
+  private grantCodeBuildStartBuildToActionRoles(pipeline: pipelines.CodePipeline): void {
+    const underlyingPipeline = pipeline.pipeline;
+
+    for (const stage of underlyingPipeline.stages) {
+      for (const action of stage.actions) {
+        const actionConfig = action.actionProperties;
+        const actionRole = actionConfig.role;
+
+        if (actionRole && actionConfig.provider === 'CodeBuild') {
+          const actionName = actionConfig.actionName;
+          const projectArn = `arn:aws:codebuild:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:project/*`;
+
+          actionRole.addToPrincipalPolicy(
+            new iam.PolicyStatement({
+              sid: `CodeBuildStartBuild${actionName.replace(/[^a-zA-Z0-9]/g, '')}`,
+              actions: ['codebuild:StartBuild', 'codebuild:BatchGetBuilds'],
+              resources: [projectArn],
+            })
+          );
+        }
+      }
+    }
   }
 }
