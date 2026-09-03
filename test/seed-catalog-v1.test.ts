@@ -22,6 +22,7 @@ import {
   CombatConstantsCatalog,
   ClassCatalog,
   COMBAT_CONSTANTS_V1,
+  COMBAT_CONSTANTS_V2,
   CLASSES_V1,
   SKILLS_V1,
   SKILL_SPEC_VALUES,
@@ -506,10 +507,13 @@ describe('Seed Helper - Repository Integration', () => {
 
       const result = await seedCatalogV1(repository);
 
-      expect(putCallCount).toBe(6);
-      expect(updateCallCount).toBe(6);
+      // 6 v1 catalogs + 1 v2 combat-constants = 7 puts, 7 publishes
+      expect(putCallCount).toBe(7);
+      expect(updateCallCount).toBe(7);
 
+      // Result returns v2 combat-constants (latest)
       expect(result.combatConstants.status).toBe('published');
+      expect(result.combatConstants.version).toBe(2);
       expect(result.classes.status).toBe('published');
       expect(result.skills.status).toBe('published');
       expect(result.classes.data).toHaveLength(6);
@@ -543,6 +547,187 @@ describe('Seed Helper - Repository Integration', () => {
           data: { ...COMBAT_CONSTANTS_V1 },
         })
       ).rejects.toThrow(PublishedCatalogImmutableError);
+    });
+  });
+
+  describe('seedCatalogV1 publishes v2 combat-constants after v1', () => {
+    it('should publish both v1 and v2 combat-constants', async () => {
+      const storedItems: Record<string, unknown> = {};
+
+      ddbMock.on(PutCommand).callsFake((input) => {
+        const pk = input.Item.PK as string;
+        const sk = input.Item.SK as string;
+        storedItems[`${pk}#${sk}`] = { ...input.Item };
+        return {};
+      });
+
+      ddbMock.on(UpdateCommand).callsFake((input) => {
+        const pk = input.Key.PK as string;
+        const sk = input.Key.SK as string;
+        const key = `${pk}#${sk}`;
+        const existing = storedItems[key] as Record<string, unknown>;
+        if (existing) {
+          existing.status = 'published';
+          existing.publishedAt = new Date().toISOString();
+        }
+        return { Attributes: existing || {} };
+      });
+
+      ddbMock.on(GetCommand).callsFake((input) => {
+        const pk = input.Key.PK as string;
+        const sk = input.Key.SK as string;
+        return { Item: storedItems[`${pk}#${sk}`] || undefined };
+      });
+
+      const result = await seedCatalogV1(repository);
+
+      const v1Key = 'CATALOG#combat-constants#VERSION#00000001';
+      const v2Key = 'CATALOG#combat-constants#VERSION#00000002';
+      expect(storedItems[v1Key]).toBeDefined();
+      expect(storedItems[v2Key]).toBeDefined();
+
+      expect(result.combatConstants.version).toBe(2);
+      expect(result.combatConstants.status).toBe('published');
+    });
+  });
+});
+
+describe('Combat Constants V2 - MMO-9 ZoneServer additionalConstants', () => {
+  describe('V2 contains all required additionalConstants keys', () => {
+    const requiredKeys = [
+      'defaultAttackRange',
+      'targetRange',
+      'defaultAttackDamage',
+      'defaultAttackCooldown',
+      'defaultMonsterHp',
+      'defaultMonsterSp',
+      'defaultMonsterMoveSpeed',
+      'defaultMonsterDamage',
+      'defaultMonsterAggroRange',
+      'defaultMonsterAttackRange',
+      'defaultMonsterXp',
+      'defaultMonsterMoney',
+      'defaultMonsterAttackCooldown',
+      'defaultMonsterLeashRange',
+      'monsterSpellRollChance',
+      'aoiRadius',
+      'lootDespawnSeconds',
+      'lootPickupRadius',
+      'lootVisibilityRadius',
+      'playerRespawnSeconds',
+      'monsterRespawnSeconds',
+    ];
+
+    it.each(requiredKeys)('should have %s in additionalConstants', (key) => {
+      expect(COMBAT_CONSTANTS_V2.additionalConstants).toBeDefined();
+      expect(COMBAT_CONSTANTS_V2.additionalConstants![key]).toBeDefined();
+    });
+
+    it('should have correct values for all ZoneServer keys (decimals, not C# literals)', () => {
+      const ac = COMBAT_CONSTANTS_V2.additionalConstants!;
+      expect(ac.defaultAttackRange).toBe(2.5);
+      expect(ac.targetRange).toBe(30);
+      expect(ac.defaultAttackDamage).toBe(10);
+      expect(ac.defaultAttackCooldown).toBe(1.5);
+      expect(ac.defaultMonsterHp).toBe(100);
+      expect(ac.defaultMonsterSp).toBe(50);
+      expect(ac.defaultMonsterMoveSpeed).toBe(3.0);
+      expect(ac.defaultMonsterDamage).toBe(10);
+      expect(ac.defaultMonsterAggroRange).toBe(10);
+      expect(ac.defaultMonsterAttackRange).toBe(2.0);
+      expect(ac.defaultMonsterXp).toBe(25);
+      expect(ac.defaultMonsterMoney).toBe(5);
+      expect(ac.defaultMonsterAttackCooldown).toBe(2.0);
+      expect(ac.defaultMonsterLeashRange).toBe(20);
+      expect(ac.monsterSpellRollChance).toBe(0.01);
+      expect(ac.aoiRadius).toBe(30);
+      expect(ac.lootDespawnSeconds).toBe(60);
+      expect(ac.lootPickupRadius).toBe(2.5);
+      expect(ac.lootVisibilityRadius).toBe(30);
+      expect(ac.playerRespawnSeconds).toBe(4);
+      expect(ac.monsterRespawnSeconds).toBe(4);
+    });
+  });
+
+  describe('V2 preserves all V1 additionalConstants', () => {
+    it('should preserve V1 allocation cost band keys', () => {
+      const ac = COMBAT_CONSTANTS_V2.additionalConstants!;
+      expect(ac.allocationCostBand1Max).toBe(30);
+      expect(ac.allocationCostBand2Max).toBe(60);
+      expect(ac.allocationCostBand3Max).toBe(90);
+      expect(ac.allocationCostBand4Max).toBe(120);
+      expect(ac.allocationCostBand1Cost).toBe(1);
+      expect(ac.allocationCostBand2Cost).toBe(2);
+      expect(ac.allocationCostBand3Cost).toBe(3);
+      expect(ac.allocationCostBand4Cost).toBe(4);
+      expect(ac.allocationCostBand5Cost).toBe(5);
+    });
+  });
+
+  describe('V2 inherits all V1 root-level fields', () => {
+    it('should have identical powerScaling', () => {
+      expect(COMBAT_CONSTANTS_V2.powerScaling).toEqual(COMBAT_CONSTANTS_V1.powerScaling);
+    });
+
+    it('should have identical speed', () => {
+      expect(COMBAT_CONSTANTS_V2.speed).toEqual(COMBAT_CONSTANTS_V1.speed);
+    });
+
+    it('should have identical vitality', () => {
+      expect(COMBAT_CONSTANTS_V2.vitality).toEqual(COMBAT_CONSTANTS_V1.vitality);
+    });
+
+    it('should have identical accuracy', () => {
+      expect(COMBAT_CONSTANTS_V2.accuracy).toEqual(COMBAT_CONSTANTS_V1.accuracy);
+    });
+
+    it('should have identical critical', () => {
+      expect(COMBAT_CONSTANTS_V2.critical).toEqual(COMBAT_CONSTANTS_V1.critical);
+    });
+
+    it('should have identical defense', () => {
+      expect(COMBAT_CONSTANTS_V2.defense).toEqual(COMBAT_CONSTANTS_V1.defense);
+    });
+
+    it('should have identical glancingHit', () => {
+      expect(COMBAT_CONSTANTS_V2.glancingHit).toEqual(COMBAT_CONSTANTS_V1.glancingHit);
+    });
+
+    it('should have identical status', () => {
+      expect(COMBAT_CONSTANTS_V2.status).toEqual(COMBAT_CONSTANTS_V1.status);
+    });
+
+    it('should have identical statAllocationBands', () => {
+      expect(COMBAT_CONSTANTS_V2.statAllocationBands).toEqual(COMBAT_CONSTANTS_V1.statAllocationBands);
+    });
+
+    it('should have identical statCaps', () => {
+      expect(COMBAT_CONSTANTS_V2.statCaps).toEqual(COMBAT_CONSTANTS_V1.statCaps);
+    });
+
+    it('should have identical dodge', () => {
+      expect(COMBAT_CONSTANTS_V2.dodge).toEqual(COMBAT_CONSTANTS_V1.dodge);
+    });
+
+    it('should have identical timing', () => {
+      expect(COMBAT_CONSTANTS_V2.timing).toEqual(COMBAT_CONSTANTS_V1.timing);
+    });
+
+    it('should have identical stagger', () => {
+      expect(COMBAT_CONSTANTS_V2.stagger).toEqual(COMBAT_CONSTANTS_V1.stagger);
+    });
+
+    it('should have identical pvp', () => {
+      expect(COMBAT_CONSTANTS_V2.pvp).toEqual(COMBAT_CONSTANTS_V1.pvp);
+    });
+  });
+
+  describe('V1 immutability is preserved', () => {
+    it('V1 additionalConstants should NOT have V2 keys', () => {
+      const v1Keys = Object.keys(COMBAT_CONSTANTS_V1.additionalConstants || {});
+      expect(v1Keys).not.toContain('defaultAttackRange');
+      expect(v1Keys).not.toContain('aoiRadius');
+      expect(v1Keys).not.toContain('lootDespawnSeconds');
     });
   });
 });

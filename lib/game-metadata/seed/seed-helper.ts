@@ -14,7 +14,7 @@ import {
   ElementCatalog,
   ResonanceCatalog,
 } from '../index';
-import { COMBAT_CONSTANTS_V1 } from './combat-constants';
+import { COMBAT_CONSTANTS_V1, COMBAT_CONSTANTS_V2 } from './combat-constants';
 import { CLASSES_V1 } from './classes';
 import { SKILLS_V1 } from './skills';
 import { STATUSES_V1 } from './statuses';
@@ -52,7 +52,7 @@ export async function seedCatalogV1(
   const createdBy = options.createdBy ?? 'seed-helper';
   const releaseNotes = options.releaseNotes ?? 'Initial seed v1 from combat, class, and stat specs';
 
-  // Create combat constants catalog
+  // Create combat constants catalog v1
   const combatConstantsDraft = await repository.createCatalogVersion<CombatConstantsCatalog>({
     catalogType: 'combat-constants',
     version,
@@ -61,9 +61,23 @@ export async function seedCatalogV1(
     data: COMBAT_CONSTANTS_V1,
   });
   await repository.publishCatalogVersion('combat-constants', version);
-  const combatConstants = (await repository.getCatalogVersion<CombatConstantsCatalog>(
+  const combatConstantsV1 = (await repository.getCatalogVersion<CombatConstantsCatalog>(
     'combat-constants',
     version
+  ))!;
+
+  // Create combat constants catalog v2 (MMO-9: ZoneServer additionalConstants)
+  const combatConstantsV2Draft = await repository.createCatalogVersion<CombatConstantsCatalog>({
+    catalogType: 'combat-constants',
+    version: 2,
+    createdBy,
+    releaseNotes: 'MMO-9: Added ZoneServer additionalConstants keys',
+    data: COMBAT_CONSTANTS_V2,
+  });
+  await repository.publishCatalogVersion('combat-constants', 2);
+  const combatConstants = (await repository.getCatalogVersion<CombatConstantsCatalog>(
+    'combat-constants',
+    2
   ))!;
 
   // Create class catalog
