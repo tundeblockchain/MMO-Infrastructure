@@ -1,6 +1,7 @@
 import * as cdk from 'aws-cdk-lib';
 import { Template, Match } from 'aws-cdk-lib/assertions';
 import { PipelineStack, PipelineStackProps } from '../lib/pipeline-stack';
+import { resolvePipelineContext } from '../lib/pipeline-context';
 
 function createTestStack(propsOverride: Partial<PipelineStackProps> = {}): cdk.Stack {
   const app = new cdk.App();
@@ -103,7 +104,7 @@ describe('PipelineStack', () => {
       });
     });
 
-    it('synth command includes all four context flags', () => {
+    it('synth command includes github and account/region context flags', () => {
       const stack = createTestStack({
         githubOwner: 'tundeblockchain',
         githubRepo: 'MMO-Infrastructure',
@@ -119,7 +120,7 @@ describe('PipelineStack', () => {
                 build: Match.objectLike({
                   commands: Match.arrayWith([
                     Match.stringLikeRegexp(
-                      'npx cdk synth.*-c githubConnectionArn=.*-c githubOwner=tundeblockchain.*-c githubRepo=MMO-Infrastructure.*-c githubBranch=master'
+                      'npx cdk synth.*-c githubConnectionArn=.*-c githubOwner=tundeblockchain.*-c githubRepo=MMO-Infrastructure.*-c githubBranch=master.*-c account=\\$\\{CDK_DEFAULT_ACCOUNT\\}.*-c region=\\$\\{CDK_DEFAULT_REGION\\}'
                     ),
                   ]),
                 }),
@@ -127,6 +128,20 @@ describe('PipelineStack', () => {
             })
           ),
         },
+        Environment: Match.objectLike({
+          EnvironmentVariables: Match.arrayWith([
+            Match.objectLike({
+              Name: 'CDK_DEFAULT_ACCOUNT',
+              Type: 'PLAINTEXT',
+              Value: '123456789012',
+            }),
+            Match.objectLike({
+              Name: 'CDK_DEFAULT_REGION',
+              Type: 'PLAINTEXT',
+              Value: 'eu-west-2',
+            }),
+          ]),
+        }),
       });
     });
   });
@@ -263,6 +278,131 @@ describe('PipelineStack', () => {
           ]),
         },
       });
+    });
+  });
+
+  describe('MMO-21: Prepare/Deploy StackName and required context', () => {
+    it('every CloudFormation Prepare/Deploy action has a non-empty StackName', () => {
+      const stack = createTestStack();
+      const template = Template.fromStack(stack);
+      const pipelines = template.findResources('AWS::CodePipeline::Pipeline');
+      const actions: Array<{ stage: string; name: string; stackName: unknown }> = [];
+
+      for (const resource of Object.values(pipelines) as Array<{
+        Properties?: { Stages?: Array<{ Name: string; Actions?: Array<any> }> };
+      }>) {
+        for (const stage of resource.Properties?.Stages ?? []) {
+          for (const action of stage.Actions ?? []) {
+            if (action.ActionTypeId?.Provider !== 'CloudFormation') {
+              continue;
+            }
+            if (!/\.(Prepare|Deploy)$/.test(action.Name ?? '')) {
+              continue;
+            }
+            actions.push({
+              stage: stage.Name,
+              name: action.Name,
+              stackName: action.Configuration?.StackName,
+            });
+          }
+        }
+      }
+
+      expect(actions.length).toBeGreaterThan(0);
+      const empty = actions.filter(
+        (action) =>
+          typeof action.stackName !== 'string' ||
+          action.stackName.trim() === '' ||
+          action.stackName === 'null' ||
+          action.stackName === 'undefined'
+      );
+      expect(empty).toEqual([]);
+      expect(actions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            stage: 'dev',
+            name: 'Data.Prepare',
+            stackName: 'dev-Data',
+          }),
+          expect.objectContaining({
+            stage: 'dev',
+            name: 'Data.Deploy',
+            stackName: 'dev-Data',
+          }),
+          expect.objectContaining({
+            stage: 'dev',
+            name: 'Api.Prepare',
+            stackName: 'dev-Api',
+          }),
+          expect.objectContaining({
+            stage: 'prod',
+            name: 'Data.Prepare',
+            stackName: 'prod-Data',
+          }),
+        ])
+      );
+    });
+
+    it('synth fails loudly if required githubConnectionArn context is missing', () => {
+      const app = new cdk.App({
+        context: {
+          githubOwner: 'test-owner',
+          githubRepo: 'test-repo',
+          account: '123456789012',
+          region: 'eu-west-2',
+        },
+      });
+      expect(() => resolvePipelineContext(app)).toThrow(/githubConnectionArn/);
+    });
+
+    it('synth fails loudly if required account context is missing', () => {
+      const app = new cdk.App({
+        context: {
+          githubConnectionArn:
+            'arn:aws:codestar-connections:eu-west-2:123456789012:connection/test',
+          githubOwner: 'test-owner',
+          githubRepo: 'test-repo',
+          region: 'eu-west-2',
+        },
+      });
+      const previous = process.env.CDK_DEFAULT_ACCOUNT;
+      delete process.env.CDK_DEFAULT_ACCOUNT;
+      try {
+        expect(() => resolvePipelineContext(app)).toThrow(/account/);
+      } finally {
+        if (previous === undefined) {
+          delete process.env.CDK_DEFAULT_ACCOUNT;
+        } else {
+          process.env.CDK_DEFAULT_ACCOUNT = previous;
+        }
+      }
+    });
+
+    it('synth fails loudly if required context is the string "undefined" or "null"', () => {
+      const app = new cdk.App({
+        context: {
+          githubConnectionArn: 'undefined',
+          githubOwner: 'null',
+          githubRepo: 'test-repo',
+          account: 'undefined',
+          region: 'null',
+        },
+      });
+      expect(() => resolvePipelineContext(app)).toThrow(/Missing required context/);
+    });
+
+    it('rejects PipelineStack construction without env', () => {
+      const app = new cdk.App();
+      expect(
+        () =>
+          new PipelineStack(app, 'BrokenPipeline', {
+            githubConnectionArn:
+              'arn:aws:codestar-connections:eu-west-2:123456789012:connection/test',
+            githubOwner: 'test-owner',
+            githubRepo: 'test-repo',
+            githubBranch: 'master',
+          })
+      ).toThrow(/env\.account and env\.region/);
     });
   });
 });

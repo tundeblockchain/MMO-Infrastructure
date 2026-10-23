@@ -2,5 +2,7 @@
   "githubOwner": "YOUR_GITHUB_USER_OR_ORG",
   "githubRepo": "MMO-Infrastructure",
   "githubBranch": "develop",
-  "githubConnectionArn": "arn:aws:codestar-connections:REGION:ACCOUNT:connection/UUID"
+  "githubConnectionArn": "arn:aws:codestar-connections:REGION:ACCOUNT:connection/UUID",
+  "account": "YOUR_ACCOUNT_ID",
+  "region": "eu-west-2"
 }
