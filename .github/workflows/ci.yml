@@ -35,7 +35,7 @@ jobs:
             -c githubConnectionArn=arn:aws:codestar-connections:eu-west-2:000000000000:connection/ci-dummy \
             -c githubOwner=tundeblockchain \
             -c githubRepo=MMO-Infrastructure \
-            -c githubBranch=master \
+            -c githubBranch=main \
             -c account=000000000000 \
             -c region=eu-west-2
         env:

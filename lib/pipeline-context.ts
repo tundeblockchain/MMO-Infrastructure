@@ -51,7 +51,7 @@ export function resolvePipelineContext(app: cdk.App): PipelineContext {
   const githubOwner = readContextOrEnv(app, 'githubOwner', ['GITHUB_OWNER']);
   const githubRepo = readContextOrEnv(app, 'githubRepo', ['GITHUB_REPO']);
   const githubBranch =
-    readContextOrEnv(app, 'githubBranch', ['GITHUB_BRANCH']) ?? 'master';
+    readContextOrEnv(app, 'githubBranch', ['GITHUB_BRANCH']) ?? 'main';
   const account = readContextOrEnv(app, 'account', ['CDK_DEFAULT_ACCOUNT']);
   const region =
     readContextOrEnv(app, 'region', ['CDK_DEFAULT_REGION']) ?? 'eu-west-2';
