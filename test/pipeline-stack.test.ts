@@ -10,7 +10,7 @@ function createTestStack(propsOverride: Partial<PipelineStackProps> = {}): cdk.S
     githubConnectionArn: 'arn:aws:codestar-connections:eu-west-2:123456789012:connection/test-conn-id',
     githubOwner: 'test-owner',
     githubRepo: 'test-repo',
-    githubBranch: 'master',
+    githubBranch: 'main',
   };
   return new PipelineStack(app, 'TestPipelineStack', { ...defaultProps, ...propsOverride });
 }
@@ -146,29 +146,9 @@ describe('PipelineStack', () => {
     });
   });
 
-  describe('githubBranch defaults to master for auto-build', () => {
-    it('uses master branch when props specify master', () => {
-      const stack = createTestStack({ githubBranch: 'master' });
-      const template = Template.fromStack(stack);
-
-      template.hasResourceProperties('AWS::CodePipeline::Pipeline', {
-        Stages: Match.arrayWith([
-          Match.objectLike({
-            Name: 'Source',
-            Actions: Match.arrayWith([
-              Match.objectLike({
-                Configuration: Match.objectLike({
-                  BranchName: 'master',
-                }),
-              }),
-            ]),
-          }),
-        ]),
-      });
-    });
-
-    it('source stage uses the provided branch name from props', () => {
-      const stack = createTestStack({ githubBranch: 'main' });
+  describe('githubBranch defaults to main for auto-build', () => {
+    it('uses BranchName main by default', () => {
+      const stack = createTestStack();
       const template = Template.fromStack(stack);
 
       template.hasResourceProperties('AWS::CodePipeline::Pipeline', {
@@ -184,6 +164,67 @@ describe('PipelineStack', () => {
             ]),
           }),
         ]),
+      });
+    });
+
+    it('source stage uses the provided branch name from props', () => {
+      const stack = createTestStack({ githubBranch: 'develop' });
+      const template = Template.fromStack(stack);
+
+      template.hasResourceProperties('AWS::CodePipeline::Pipeline', {
+        Stages: Match.arrayWith([
+          Match.objectLike({
+            Name: 'Source',
+            Actions: Match.arrayWith([
+              Match.objectLike({
+                Configuration: Match.objectLike({
+                  BranchName: 'develop',
+                }),
+              }),
+            ]),
+          }),
+        ]),
+      });
+    });
+  });
+
+  describe('resolvePipelineContext githubBranch', () => {
+    const requiredContext = {
+      githubConnectionArn:
+        'arn:aws:codestar-connections:eu-west-2:123456789012:connection/test',
+      githubOwner: 'test-owner',
+      githubRepo: 'test-repo',
+      account: '123456789012',
+      region: 'eu-west-2',
+    };
+
+    function withUnsetGithubBranch(fn: () => void): void {
+      const previous = process.env.GITHUB_BRANCH;
+      delete process.env.GITHUB_BRANCH;
+      try {
+        fn();
+      } finally {
+        if (previous === undefined) {
+          delete process.env.GITHUB_BRANCH;
+        } else {
+          process.env.GITHUB_BRANCH = previous;
+        }
+      }
+    }
+
+    it('resolves githubBranch to main when no context and no env var is set', () => {
+      withUnsetGithubBranch(() => {
+        const app = new cdk.App({ context: requiredContext });
+        expect(resolvePipelineContext(app).githubBranch).toBe('main');
+      });
+    });
+
+    it('uses the githubBranch context override when provided', () => {
+      withUnsetGithubBranch(() => {
+        const app = new cdk.App({
+          context: { ...requiredContext, githubBranch: 'develop' },
+        });
+        expect(resolvePipelineContext(app).githubBranch).toBe('develop');
       });
     });
   });
