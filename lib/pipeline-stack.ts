@@ -16,23 +16,47 @@ export class PipelineStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: PipelineStackProps) {
     super(scope, id, props);
 
+    const account = props.env?.account ?? cdk.Stack.of(this).account;
+    const region = props.env?.region ?? cdk.Stack.of(this).region;
+    if (
+      !account ||
+      !region ||
+      account === 'undefined' ||
+      region === 'undefined' ||
+      cdk.Token.isUnresolved(account) ||
+      cdk.Token.isUnresolved(region)
+    ) {
+      throw new Error(
+        'PipelineStack requires env.account and env.region. ' +
+          'Pass -c account=ACCOUNT_ID -c region=eu-west-2 (or set CDK_DEFAULT_ACCOUNT / CDK_DEFAULT_REGION).'
+      );
+    }
+
     const repoString = `${props.githubOwner}/${props.githubRepo}`;
 
     const source = CodePipelineSource.connection(repoString, props.githubBranch, {
       connectionArn: props.githubConnectionArn,
     });
 
+    // Pin account/region as -c flags. The CDK CLI overwrites CDK_DEFAULT_REGION
+    // from the SDK (often us-east-1), which would otherwise synth application
+    // stacks for the wrong env and leave CodePipeline Prepare actions with no
+    // usable StackName ("Stack [null] does not exist").
     const synthContextArgs = [
       `-c githubConnectionArn=\${GITHUB_CONNECTION_ARN}`,
       `-c githubOwner=${props.githubOwner}`,
       `-c githubRepo=${props.githubRepo}`,
       `-c githubBranch=${props.githubBranch}`,
+      `-c account=\${CDK_DEFAULT_ACCOUNT}`,
+      `-c region=\${CDK_DEFAULT_REGION}`,
     ].join(' ');
 
     const synth = new ShellStep('Synth', {
       input: source,
       env: {
         GITHUB_CONNECTION_ARN: props.githubConnectionArn,
+        CDK_DEFAULT_ACCOUNT: account,
+        CDK_DEFAULT_REGION: region,
       },
       commands: [
         'node --version',

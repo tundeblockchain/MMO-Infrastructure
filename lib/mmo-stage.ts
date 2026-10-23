@@ -14,12 +14,27 @@ export class MmoStage extends cdk.Stage {
   constructor(scope: Construct, id: string, props: MmoStageProps) {
     super(scope, id, props);
 
+    const env = props.env;
+    if (!env?.account || !env?.region) {
+      throw new Error(
+        `MmoStage "${id}" requires env.account and env.region so Data/Api ` +
+          'Prepare/Deploy actions get a concrete CloudFormation StackName.'
+      );
+    }
+    if (!props.stageName || props.stageName === 'undefined' || props.stageName === 'null') {
+      throw new Error(`MmoStage "${id}" requires a non-empty stageName.`);
+    }
+
     this.dataStack = new DataStack(this, 'Data', {
+      env,
       stageName: props.stageName,
+      stackName: `${props.stageName}-Data`,
     });
 
     this.apiStack = new ApiStack(this, 'Api', {
+      env,
       stageName: props.stageName,
+      stackName: `${props.stageName}-Api`,
       table: this.dataStack.table,
       firebaseSecret: this.dataStack.firebaseSecret,
       gameJwtSecret: this.dataStack.gameJwtSecret,
