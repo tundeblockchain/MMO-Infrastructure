@@ -423,27 +423,11 @@ describe('PipelineStack', () => {
       }
 
       const pairs = [
-        {
-          prepare: ['Data.Prepare', 'mmo-prod-Data.Prepare'],
-          deploy: ['Data.Deploy', 'mmo-prod-Data.Deploy'],
-          stackName: 'mmo-prod-Data',
-        },
-        {
-          prepare: ['Api.Prepare', 'mmo-prod-Api.Prepare'],
-          deploy: ['Api.Deploy', 'mmo-prod-Api.Deploy'],
-          stackName: 'mmo-prod-Api',
-        },
+        { stackName: 'mmo-prod-Data' },
+        { stackName: 'mmo-prod-Api' },
       ];
 
       for (const pair of pairs) {
-        const prepare = prodActions.find(
-          (action) =>
-            pair.prepare.includes(action.name) || action.stackName === pair.stackName
-        );
-        const deploy = prodActions.find(
-          (action) =>
-            pair.deploy.includes(action.name) && action.stackName === pair.stackName
-        );
         const prepareByStack = prodActions.find(
           (action) =>
             action.stackName === pair.stackName && /\.Prepare$/.test(action.name)
@@ -452,19 +436,13 @@ describe('PipelineStack', () => {
           (action) =>
             action.stackName === pair.stackName && /\.Deploy$/.test(action.name)
         );
-        expect(prepareByStack ?? prepare).toBeDefined();
-        expect(deployByStack ?? deploy).toBeDefined();
-        expect(prepareByStack?.stackName ?? prepare?.stackName).toBe(pair.stackName);
-        expect(deployByStack?.stackName ?? deploy?.stackName).toBe(pair.stackName);
-        expect(prepareByStack?.changeSetName ?? prepare?.changeSetName).toBe(
-          'PipelineChange'
-        );
-        expect(deployByStack?.changeSetName ?? deploy?.changeSetName).toBe(
-          'PipelineChange'
-        );
-        const templatePath = String(
-          prepareByStack?.templatePath ?? prepare?.templatePath ?? ''
-        );
+        expect(prepareByStack).toBeDefined();
+        expect(deployByStack).toBeDefined();
+        expect(prepareByStack?.stackName).toBe(pair.stackName);
+        expect(deployByStack?.stackName).toBe(pair.stackName);
+        expect(prepareByStack?.changeSetName).toBe('PipelineChange');
+        expect(deployByStack?.changeSetName).toBe('PipelineChange');
+        const templatePath = String(prepareByStack?.templatePath ?? '');
         expect(templatePath.length).toBeGreaterThan(0);
         expect(templatePath).toMatch(/assembly-.*-Prod\/.*\.template\.json$/);
       }

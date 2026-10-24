@@ -36,11 +36,14 @@ export class MmoStage extends cdk.Stage {
       throw new Error(`MmoStage "${id}" requires a non-empty stageName.`);
     }
 
-    // Prod CloudFormation stack names are namespaced (`mmo-prod-*`) so a
-    // leftover `prod-Data` (REVIEW_IN_PROGRESS) and its EarlyValidation
-    // collision on `mmo-prod-game` can be sidestepped without replacing the
-    // live `dev-Data` / `dev-Api` stacks. Physical resource names still use
-    // `mmo-${stageName}-*` from DataStack / ApiStack.
+    // Prod CloudFormation stack names are namespaced (`mmo-prod-*`) so the
+    // pipeline targets a new stack instead of the stuck `prod-Data`
+    // (REVIEW_IN_PROGRESS), without replacing live `dev-Data` / `dev-Api`.
+    // The ResourceExistenceCheck collision is the leftover `mmo-prod-game`
+    // table; renaming the stack alone does not fix it. That RETAIN'd table
+    // must be deleted before mmo-prod-Data is prepared, or the same check
+    // fails. Physical names still use `mmo-${stageName}-*` from DataStack
+    // / ApiStack (no table or secret renames).
     this.dataStack = new DataStack(this, 'Data', {
       env,
       stageName: props.stageName,
