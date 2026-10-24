@@ -95,16 +95,12 @@ game-table keys, GSIs, and names are unchanged.
 
 Table names: `mmo-dev-users` (dev), `mmo-prod-users` (prod). A missing row is
 treated as `player` by catalog publish. `POST /users/me` upserts the signed-in
-caller. `AUTO_ADMIN_ON_LOGIN` is per-stage (dev and prod are both `true` for now).
-Only the exact value `true` writes `admin`; a missing or any other value upserts
-`player` and never downgrades an existing admin. Switching the flag off does
-**not** demote existing admins; demote a row by hand:
+caller. Promotion to `admin` requires `email_verified === true` on the Firebase
+token **and** a match on the per-stage allowlist (email is lowercased + trimmed).
+A missing or empty allowlist fails closed. Existing admins are never demoted.
 
-```
-aws dynamodb put-item --table-name mmo-prod-users --item '{"uid":{"S":"<FIREBASE_UID>"},"accountType":{"S":"player"}}' --region <REGION>
-```
-
-Promote by hand (same command with `"admin"`) if a stage's flag is off.
+See [Admin email allowlist](#admin-email-allowlist-per-stage) for add/remove
+and how to demote leftover blanket auto-admin rows.
 
 ---
 
@@ -379,17 +375,41 @@ when `accountType` === `admin`. A missing row is treated as player and returns
 **403** (do not treat this as "refresh token and retry"). Expired or invalid
 tokens return **401** (client should force-refresh the ID token and retry once).
 
-`AUTO_ADMIN_ON_LOGIN` is per-stage (dev and prod are both `true` for now). Only
-the exact value `true` makes `POST /users/me` write `admin`. A missing or any
-other value upserts `player` and never downgrades an existing admin. Switching
-the flag off does **not** demote existing admins; demote a row by hand:
+### Admin email allowlist (per stage)
+
+`POST /users/me` writes `admin` only when the verified Firebase token has
+`email_verified === true` and the email (lowercased + trimmed) appears on that
+stage's comma-separated allowlist. Everyone else is upserted as `player`.
+Missing or empty allowlist → nobody is promoted. Existing admins are never
+demoted automatically. Blanket `AUTO_ADMIN_ON_LOGIN` is off for both stages.
+
+Supply the list via CDK context or env (never hardcode real addresses in the
+repo). Then **redeploy** so the users-me Lambda environment updates.
+
+| Stage | CDK context | Environment variable |
+|-------|-------------|----------------------|
+| dev | `adminEmailAllowlistDev` | `ADMIN_EMAIL_ALLOWLIST_DEV` |
+| prod | `adminEmailAllowlistProd` | `ADMIN_EMAIL_ALLOWLIST_PROD` |
+| both (fallback) | `adminEmailAllowlist` | `ADMIN_EMAIL_ALLOWLIST` |
+
+```powershell
+npx cdk deploy PipelineStack `
+  -c githubConnectionArn=arn:aws:codestar-connections:REGION:ACCOUNT:connection/UUID `
+  -c githubOwner=YOUR_ORG `
+  -c githubRepo=MMO-Infrastructure `
+  -c adminEmailAllowlistDev=admin@example.com,editor@example.com `
+  -c adminEmailAllowlistProd=admin@example.com
+```
+
+Or set `$env:ADMIN_EMAIL_ALLOWLIST_DEV` / `$env:ADMIN_EMAIL_ALLOWLIST_PROD`
+before synth/deploy. The Lambda reads `ADMIN_EMAIL_ALLOWLIST` for its stage.
+
+**Demote leftover blanket auto-admin rows** (placeholder values only):
 
 ```
+aws dynamodb put-item --table-name mmo-dev-users --item '{"uid":{"S":"<FIREBASE_UID>"},"accountType":{"S":"player"}}' --region <REGION>
 aws dynamodb put-item --table-name mmo-prod-users --item '{"uid":{"S":"<FIREBASE_UID>"},"accountType":{"S":"player"}}' --region <REGION>
 ```
-
-Promote by hand (same command with `"admin"`) if a stage's flag is off. Use
-`--table-name mmo-dev-users` for the dev stage.
 
 **Getting a Firebase Token:**
 

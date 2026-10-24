@@ -2,9 +2,12 @@ import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import { DataStack } from './data-stack';
 import { ApiStack } from './api-stack';
+import { resolveStageAdminEmailAllowlist } from './pipeline-context';
 
 export interface MmoStageProps extends cdk.StageProps {
   readonly stageName: string;
+  /** Comma-separated verified emails that POST /users/me may promote. Empty = nobody. */
+  readonly adminEmailAllowlist?: string;
 }
 
 /** CloudFormation stack name for a stage's Data or Api stack. Prod only is namespaced. */
@@ -50,6 +53,11 @@ export class MmoStage extends cdk.Stage {
       stackName: cloudFormationStackName(props.stageName, 'Data'),
     });
 
+    const adminEmailAllowlist =
+      props.adminEmailAllowlist !== undefined
+        ? props.adminEmailAllowlist
+        : resolveStageAdminEmailAllowlist(this, props.stageName);
+
     this.apiStack = new ApiStack(this, 'Api', {
       env,
       stageName: props.stageName,
@@ -59,6 +67,7 @@ export class MmoStage extends cdk.Stage {
       firebaseSecret: this.dataStack.firebaseSecret,
       gameJwtSecret: this.dataStack.gameJwtSecret,
       internalSaveApiSecret: this.dataStack.internalSaveApiSecret,
+      adminEmailAllowlist,
     });
 
     this.apiStack.addDependency(this.dataStack);
