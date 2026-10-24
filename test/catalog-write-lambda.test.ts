@@ -1,17 +1,19 @@
 /**
- * Catalog Write Lambda Tests - MMO-7
+ * Catalog Write Lambda Tests - MMO-7 / MMO-27
  *
  * Tests for authenticated catalog publish API.
  * Tests cover:
- * - Happy path: publish new version with valid Firebase JWT + admin claim
- * - Auth: reject missing/invalid JWT (401), non-admin (403)
+ * - Happy path: publish new version with valid Firebase JWT + users-table admin
+ * - Auth: reject missing/invalid JWT (401)
+ * - Authz: 403 for no users-table row, 403 for player, 201 for admin
  * - Immutability: reject overwrite of published version (409 conflict)
  * - Full replacement: add and remove entries vs a previous version
- * - Validation: invalid catalog type, invalid payload structure
+ * - Validation: invalid catalog type, invalid payload structure, empty data array
  */
 
 import {
   DynamoDBDocumentClient,
+  GetCommand,
   PutCommand,
   QueryCommand,
 } from '@aws-sdk/lib-dynamodb';
@@ -76,33 +78,52 @@ function createMockEvent(
 
 const VALID_TOKEN = 'Bearer valid-firebase-token';
 const VALID_ACCOUNT_ID = 'firebase-user-123';
+const USERS_TABLE_NAME = 'test-users';
+
+function decodedToken(overrides: Record<string, unknown> = {}) {
+  return {
+    uid: VALID_ACCOUNT_ID,
+    aud: 'test-project',
+    auth_time: 1704067200,
+    exp: 1704153600,
+    iat: 1704067200,
+    iss: 'https://securetoken.google.com/test-project',
+    sub: VALID_ACCOUNT_ID,
+    firebase: {
+      identities: {},
+      sign_in_provider: 'password',
+    },
+    ...overrides,
+  };
+}
+
+function mockUsersTableRow(item?: { uid: string; accountType: string } | null) {
+  if (!item) {
+    ddbMock.on(GetCommand).resolves({});
+    return;
+  }
+  ddbMock.on(GetCommand).resolves({ Item: item });
+}
+
+function mockAdminUser(uid = VALID_ACCOUNT_ID) {
+  mockUsersTableRow({ uid, accountType: 'admin' });
+}
 
 describe('Catalog Write Lambda Handler', () => {
   beforeAll(() => {
     process.env.TABLE_NAME = 'test-table';
+    process.env.USERS_TABLE_NAME = USERS_TABLE_NAME;
   });
 
   beforeEach(() => {
     ddbMock.reset();
     jest.clearAllMocks();
+    mockAdminUser();
   });
 
   describe('POST /catalog/{catalogType}/versions - Publish New Version', () => {
     it('should publish new catalog version with valid Firebase JWT', async () => {
-      mockVerifyFirebaseIdToken.mockResolvedValueOnce({
-        uid: VALID_ACCOUNT_ID,
-        admin: true,
-        aud: 'test-project',
-        auth_time: 1704067200,
-        exp: 1704153600,
-        iat: 1704067200,
-        iss: 'https://securetoken.google.com/test-project',
-        sub: VALID_ACCOUNT_ID,
-        firebase: {
-          identities: {},
-          sign_in_provider: 'password',
-        },
-      });
+      mockVerifyFirebaseIdToken.mockResolvedValueOnce(decodedToken());
 
       ddbMock.on(QueryCommand).resolves({ Items: [] });
       ddbMock.on(PutCommand).resolves({});
@@ -130,20 +151,7 @@ describe('Catalog Write Lambda Handler', () => {
     });
 
     it('should allocate next version number when versions exist', async () => {
-      mockVerifyFirebaseIdToken.mockResolvedValueOnce({
-        uid: VALID_ACCOUNT_ID,
-        admin: true,
-        aud: 'test-project',
-        auth_time: 1704067200,
-        exp: 1704153600,
-        iat: 1704067200,
-        iss: 'https://securetoken.google.com/test-project',
-        sub: VALID_ACCOUNT_ID,
-        firebase: {
-          identities: {},
-          sign_in_provider: 'password',
-        },
-      });
+      mockVerifyFirebaseIdToken.mockResolvedValueOnce(decodedToken());
 
       ddbMock.on(QueryCommand).resolves({
         Items: [{ version: 3 }],
@@ -167,20 +175,7 @@ describe('Catalog Write Lambda Handler', () => {
     });
 
     it('should support combat-constants catalog type with object data', async () => {
-      mockVerifyFirebaseIdToken.mockResolvedValueOnce({
-        uid: VALID_ACCOUNT_ID,
-        admin: true,
-        aud: 'test-project',
-        auth_time: 1704067200,
-        exp: 1704153600,
-        iat: 1704067200,
-        iss: 'https://securetoken.google.com/test-project',
-        sub: VALID_ACCOUNT_ID,
-        firebase: {
-          identities: {},
-          sign_in_provider: 'password',
-        },
-      });
+      mockVerifyFirebaseIdToken.mockResolvedValueOnce(decodedToken());
 
       ddbMock.on(QueryCommand).resolves({ Items: [] });
       ddbMock.on(PutCommand).resolves({});
@@ -280,27 +275,10 @@ describe('Catalog Write Lambda Handler', () => {
     });
   });
 
-  describe('Authorization - Admin custom claim (MMO-27)', () => {
-    const nonAdminToken = {
-      uid: VALID_ACCOUNT_ID,
-      aud: 'test-project',
-      auth_time: 1704067200,
-      exp: 1704153600,
-      iat: 1704067200,
-      iss: 'https://securetoken.google.com/test-project',
-      sub: VALID_ACCOUNT_ID,
-      firebase: {
-        identities: {},
-        sign_in_provider: 'password',
-      },
-    };
-
-    afterEach(() => {
-      delete process.env.ADMIN_CLAIM_NAME;
-    });
-
-    it('should return 403 when a valid token lacks the admin claim', async () => {
-      mockVerifyFirebaseIdToken.mockResolvedValueOnce(nonAdminToken);
+  describe('Authorization - Users table accountType (MMO-27)', () => {
+    it('should return 403 when the users table has no row for the uid', async () => {
+      mockVerifyFirebaseIdToken.mockResolvedValueOnce(decodedToken());
+      mockUsersTableRow(null);
 
       const event = createMockEvent('POST', '/catalog/class/versions', {
         authorization: VALID_TOKEN,
@@ -311,14 +289,12 @@ describe('Catalog Write Lambda Handler', () => {
       const response = result as { statusCode: number; body: string };
 
       expect(response.statusCode).toBe(403);
-      expect(JSON.parse(response.body).error).toContain('Admin privileges required');
+      expect(JSON.parse(response.body).error).toContain('Account is not admin');
     });
 
-    it('should return 403 when admin claim is the string "true"', async () => {
-      mockVerifyFirebaseIdToken.mockResolvedValueOnce({
-        ...nonAdminToken,
-        admin: 'true',
-      });
+    it('should return 403 when accountType is player', async () => {
+      mockVerifyFirebaseIdToken.mockResolvedValueOnce(decodedToken());
+      mockUsersTableRow({ uid: VALID_ACCOUNT_ID, accountType: 'player' });
 
       const event = createMockEvent('POST', '/catalog/class/versions', {
         authorization: VALID_TOKEN,
@@ -329,13 +305,12 @@ describe('Catalog Write Lambda Handler', () => {
       const response = result as { statusCode: number; body: string };
 
       expect(response.statusCode).toBe(403);
+      expect(JSON.parse(response.body).error).toContain('Account is not admin');
     });
 
-    it('should return 201 when admin claim is boolean true', async () => {
-      mockVerifyFirebaseIdToken.mockResolvedValueOnce({
-        ...nonAdminToken,
-        admin: true,
-      });
+    it('should return 201 when accountType is admin', async () => {
+      mockVerifyFirebaseIdToken.mockResolvedValueOnce(decodedToken());
+      mockAdminUser();
       ddbMock.on(QueryCommand).resolves({ Items: [] });
       ddbMock.on(PutCommand).resolves({});
 
@@ -350,32 +325,9 @@ describe('Catalog Write Lambda Handler', () => {
       expect(response.statusCode).toBe(201);
     });
 
-    it('should honor a configurable ADMIN_CLAIM_NAME', async () => {
-      process.env.ADMIN_CLAIM_NAME = 'catalogAdmin';
-      mockVerifyFirebaseIdToken.mockResolvedValueOnce({
-        ...nonAdminToken,
-        catalogAdmin: true,
-      });
-      ddbMock.on(QueryCommand).resolves({ Items: [] });
-      ddbMock.on(PutCommand).resolves({});
-
-      const event = createMockEvent('POST', '/catalog/class/versions', {
-        authorization: VALID_TOKEN,
-        body: { data: [{ classId: 'vanguard' }] },
-      });
-
-      const result = await handler(event, {} as never, {} as never);
-      const response = result as { statusCode: number; body: string };
-
-      expect(response.statusCode).toBe(201);
-    });
-
-    it('should return 403 when configurable claim is missing even if admin is true', async () => {
-      process.env.ADMIN_CLAIM_NAME = 'catalogAdmin';
-      mockVerifyFirebaseIdToken.mockResolvedValueOnce({
-        ...nonAdminToken,
-        admin: true,
-      });
+    it('should ignore leftover Firebase admin custom claims', async () => {
+      mockVerifyFirebaseIdToken.mockResolvedValueOnce(decodedToken({ admin: true }));
+      mockUsersTableRow({ uid: VALID_ACCOUNT_ID, accountType: 'player' });
 
       const event = createMockEvent('POST', '/catalog/class/versions', {
         authorization: VALID_TOKEN,
@@ -391,20 +343,7 @@ describe('Catalog Write Lambda Handler', () => {
 
   describe('Immutability - Reject Overwrite of Published Version', () => {
     it('should return 409 when version already exists (race condition)', async () => {
-      mockVerifyFirebaseIdToken.mockResolvedValueOnce({
-        uid: VALID_ACCOUNT_ID,
-        admin: true,
-        aud: 'test-project',
-        auth_time: 1704067200,
-        exp: 1704153600,
-        iat: 1704067200,
-        iss: 'https://securetoken.google.com/test-project',
-        sub: VALID_ACCOUNT_ID,
-        firebase: {
-          identities: {},
-          sign_in_provider: 'password',
-        },
-      });
+      mockVerifyFirebaseIdToken.mockResolvedValueOnce(decodedToken());
 
       ddbMock.on(QueryCommand).resolves({ Items: [{ version: 1 }] });
 
@@ -434,20 +373,7 @@ describe('Catalog Write Lambda Handler', () => {
 
   describe('Validation - Invalid Catalog Type and Payload', () => {
     beforeEach(() => {
-      mockVerifyFirebaseIdToken.mockResolvedValue({
-        uid: VALID_ACCOUNT_ID,
-        admin: true,
-        aud: 'test-project',
-        auth_time: 1704067200,
-        exp: 1704153600,
-        iat: 1704067200,
-        iss: 'https://securetoken.google.com/test-project',
-        sub: VALID_ACCOUNT_ID,
-        firebase: {
-          identities: {},
-          sign_in_provider: 'password',
-        },
-      });
+      mockVerifyFirebaseIdToken.mockResolvedValue(decodedToken());
     });
 
     it('should return 400 for invalid catalog type', async () => {
@@ -544,24 +470,24 @@ describe('Catalog Write Lambda Handler', () => {
         expect(body.error).toContain('must be an array');
       }
     });
+
+    it('should return 400 when data is an empty array', async () => {
+      const event = createMockEvent('POST', '/catalog/class/versions', {
+        authorization: VALID_TOKEN,
+        body: { data: [] },
+      });
+
+      const result = await handler(event, {} as never, {} as never);
+      const response = result as { statusCode: number; body: string };
+
+      expect(response.statusCode).toBe(400);
+      expect(JSON.parse(response.body).error).toContain('empty array');
+    });
   });
 
   describe('Route Handling', () => {
     beforeEach(() => {
-      mockVerifyFirebaseIdToken.mockResolvedValue({
-        uid: VALID_ACCOUNT_ID,
-        admin: true,
-        aud: 'test-project',
-        auth_time: 1704067200,
-        exp: 1704153600,
-        iat: 1704067200,
-        iss: 'https://securetoken.google.com/test-project',
-        sub: VALID_ACCOUNT_ID,
-        firebase: {
-          identities: {},
-          sign_in_provider: 'password',
-        },
-      });
+      mockVerifyFirebaseIdToken.mockResolvedValue(decodedToken());
     });
 
     it('should return 404 for unknown routes', async () => {
@@ -593,26 +519,13 @@ describe('Catalog Write Lambda Handler', () => {
 
   describe('Error Handling', () => {
     it('should return 500 for DynamoDB errors', async () => {
-      mockVerifyFirebaseIdToken.mockResolvedValueOnce({
-        uid: VALID_ACCOUNT_ID,
-        admin: true,
-        aud: 'test-project',
-        auth_time: 1704067200,
-        exp: 1704153600,
-        iat: 1704067200,
-        iss: 'https://securetoken.google.com/test-project',
-        sub: VALID_ACCOUNT_ID,
-        firebase: {
-          identities: {},
-          sign_in_provider: 'password',
-        },
-      });
+      mockVerifyFirebaseIdToken.mockResolvedValueOnce(decodedToken());
 
       ddbMock.on(QueryCommand).rejects(new Error('DynamoDB connection failed'));
 
       const event = createMockEvent('POST', '/catalog/class/versions', {
         authorization: VALID_TOKEN,
-        body: { data: [] },
+        body: { data: [{ classId: 'vanguard' }] },
       });
 
       const result = await handler(event, {} as never, {} as never);
@@ -635,26 +548,15 @@ describe('All Catalog Types Support', () => {
 
   beforeAll(() => {
     process.env.TABLE_NAME = 'test-table';
+    process.env.USERS_TABLE_NAME = USERS_TABLE_NAME;
   });
 
   beforeEach(() => {
     ddbMock.reset();
     jest.clearAllMocks();
+    mockAdminUser();
 
-    mockVerifyFirebaseIdToken.mockResolvedValue({
-      uid: VALID_ACCOUNT_ID,
-      admin: true,
-      aud: 'test-project',
-      auth_time: 1704067200,
-      exp: 1704153600,
-      iat: 1704067200,
-      iss: 'https://securetoken.google.com/test-project',
-      sub: VALID_ACCOUNT_ID,
-      firebase: {
-        identities: {},
-        sign_in_provider: 'password',
-      },
-    });
+    mockVerifyFirebaseIdToken.mockResolvedValue(decodedToken());
 
     ddbMock.on(QueryCommand).resolves({ Items: [] });
     ddbMock.on(PutCommand).resolves({});
@@ -690,26 +592,15 @@ describe('All Catalog Types Support', () => {
 describe('Admin Publish Scenarios (MMO-11)', () => {
   beforeAll(() => {
     process.env.TABLE_NAME = 'test-table';
+    process.env.USERS_TABLE_NAME = USERS_TABLE_NAME;
   });
 
   beforeEach(() => {
     ddbMock.reset();
     jest.clearAllMocks();
+    mockAdminUser();
 
-    mockVerifyFirebaseIdToken.mockResolvedValue({
-      uid: VALID_ACCOUNT_ID,
-      admin: true,
-      aud: 'test-project',
-      auth_time: 1704067200,
-      exp: 1704153600,
-      iat: 1704067200,
-      iss: 'https://securetoken.google.com/test-project',
-      sub: VALID_ACCOUNT_ID,
-      firebase: {
-        identities: {},
-        sign_in_provider: 'password',
-      },
-    });
+    mockVerifyFirebaseIdToken.mockResolvedValue(decodedToken());
 
     ddbMock.on(QueryCommand).resolves({ Items: [] });
     ddbMock.on(PutCommand).resolves({});
@@ -1259,26 +1150,15 @@ describe('Admin Publish Scenarios (MMO-11)', () => {
 describe('Full replacement add/remove payloads (MMO-25)', () => {
   beforeAll(() => {
     process.env.TABLE_NAME = 'test-table';
+    process.env.USERS_TABLE_NAME = USERS_TABLE_NAME;
   });
 
   beforeEach(() => {
     ddbMock.reset();
     jest.clearAllMocks();
+    mockAdminUser();
 
-    mockVerifyFirebaseIdToken.mockResolvedValue({
-      uid: VALID_ACCOUNT_ID,
-      admin: true,
-      aud: 'test-project',
-      auth_time: 1704067200,
-      exp: 1704153600,
-      iat: 1704067200,
-      iss: 'https://securetoken.google.com/test-project',
-      sub: VALID_ACCOUNT_ID,
-      firebase: {
-        identities: {},
-        sign_in_provider: 'password',
-      },
-    });
+    mockVerifyFirebaseIdToken.mockResolvedValue(decodedToken());
 
     ddbMock.on(QueryCommand).resolves({ Items: [{ version: 1 }] });
     ddbMock.on(PutCommand).resolves({});
@@ -1375,13 +1255,7 @@ describe('Full replacement add/remove payloads (MMO-25)', () => {
     expect(stored.map((row) => row.statusId)).toEqual(['flame', 'new_bleed']);
   });
 
-  it('should accept an empty array as a full catalog wipe of that type', async () => {
-    let capturedItem: unknown = null;
-    ddbMock.on(PutCommand).callsFake((input) => {
-      capturedItem = input.Item;
-      return {};
-    });
-
+  it('should reject an empty array with 400', async () => {
     const event = createMockEvent('POST', '/catalog/element/versions', {
       authorization: VALID_TOKEN,
       body: { data: [], releaseNotes: 'Clear all elements' },
@@ -1390,7 +1264,7 @@ describe('Full replacement add/remove payloads (MMO-25)', () => {
     const result = await handler(event, {} as never, {} as never);
     const response = result as { statusCode: number; body: string };
 
-    expect(response.statusCode).toBe(201);
-    expect((capturedItem as { data: unknown }).data).toEqual([]);
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(response.body).error).toContain('empty array');
   });
 });

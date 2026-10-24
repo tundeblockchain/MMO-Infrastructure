@@ -7,7 +7,7 @@ info:
     
     **Authentication:**
     - Character endpoints use Firebase ID tokens or game session JWTs
-    - Catalog write endpoints require Firebase ID tokens with custom claim `admin: true` (claim name configurable via `ADMIN_CLAIM_NAME`)
+    - Catalog write endpoints require Firebase ID tokens whose uid has `accountType: admin` in the users table (missing row = player)
     - Catalog read endpoints are unauthenticated (for ZoneServer caching)
     
     **Catalog Read APIs (MMO-6, MMO-10):**
@@ -559,9 +559,11 @@ paths:
         `aud`/`iss` = Firebase `project_id` from Secrets Manager
         `mmo-{stage}/firebase-service-account`).
         
-        **Admin-only:** the token must include custom claim `admin: true` (boolean).
-        Claim name is Lambda env `ADMIN_CLAIM_NAME` (default `admin`). Missing claim → 403.
+        **Admin-only:** after token verification, catalog-write looks up `uid` in the
+        users table. Publish is allowed only when `accountType` === `admin`.
+        A missing row is treated as player → 403 (account is not admin).
         Missing, malformed (`Bearer` prefix required), invalid, or expired token → 401.
+        Empty `data` arrays are rejected with 400.
         
         **Full replacement:** POST the complete new catalog `data`. There is no PATCH.
         Entries omitted vs the previous version are removed from the new version only;
@@ -855,6 +857,10 @@ paths:
                   summary: Wrong data format
                   value:
                     error: "class data must be an array"
+                emptyArray:
+                  summary: Empty data array
+                  value:
+                    error: "class data must not be an empty array"
         '401':
           description: Missing, malformed, invalid, or expired Firebase token
           content:
@@ -864,13 +870,13 @@ paths:
               example:
                 error: "Valid Firebase ID token required"
         '403':
-          description: Valid Firebase token without the admin custom claim
+          description: account is not admin
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               example:
-                error: "Admin privileges required"
+                error: "Account is not admin"
         '409':
           description: Version conflict (race condition)
           content:
@@ -894,8 +900,9 @@ components:
       description: |
         Firebase ID token for catalog writes. Must be sent as `Authorization: Bearer <token>`.
         Token `aud`/`iss` must match the Firebase project_id in the uploaded service-account
-        secret. The token must also include custom claim `admin: true` (or the configured
-        `ADMIN_CLAIM_NAME`). GET catalog routes ignore this header if present.
+        secret. After verification, the uid must have `accountType: admin` in the users
+        table (missing row = player → 403, account is not admin).
+        GET catalog routes ignore this header if present.
 
   schemas:
     CatalogType:
@@ -1034,22 +1041,27 @@ components:
           oneOf:
             - $ref: '#/components/schemas/CombatConstantsData'
             - type: array
+              minItems: 1
               items:
                 $ref: '#/components/schemas/ClassDefinition'
               description: Array of ClassDefinition for class catalog
             - type: array
+              minItems: 1
               items:
                 $ref: '#/components/schemas/SkillDefinition'
               description: Array of SkillDefinition for skill catalog
             - type: array
+              minItems: 1
               items:
                 $ref: '#/components/schemas/StatusDefinition'
               description: Array of StatusDefinition for status catalog
             - type: array
+              minItems: 1
               items:
                 $ref: '#/components/schemas/ElementDefinition'
               description: Array of ElementDefinition for element catalog
             - type: array
+              minItems: 1
               items:
                 $ref: '#/components/schemas/ResonanceDefinition'
               description: Array of ResonanceDefinition for resonance catalog

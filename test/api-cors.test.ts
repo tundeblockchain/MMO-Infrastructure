@@ -24,7 +24,7 @@ describe('HTTP API CORS (MMO-26 / MMO-27)', () => {
     });
   });
 
-  it('sets ADMIN_CLAIM_NAME on the catalog-write Lambda', () => {
+  it('sets USERS_TABLE_NAME on the catalog-write Lambda', () => {
     const app = new cdk.App();
     const stage = new MmoStage(app, 'Dev', { env: ENV, stageName: 'dev' });
     const template = Template.fromStack(stage.apiStack);
@@ -33,9 +33,22 @@ describe('HTTP API CORS (MMO-26 / MMO-27)', () => {
       FunctionName: 'mmo-dev-catalog-write',
       Environment: {
         Variables: Match.objectLike({
-          ADMIN_CLAIM_NAME: 'admin',
+          USERS_TABLE_NAME: 'mmo-dev-users',
         }),
       },
     });
+  });
+
+  it('does not set ADMIN_CLAIM_NAME on the catalog-write Lambda', () => {
+    const app = new cdk.App();
+    const stage = new MmoStage(app, 'Dev', { env: ENV, stageName: 'dev' });
+    const template = Template.fromStack(stage.apiStack);
+    const functions = template.findResources('AWS::Lambda::Function', {
+      Properties: { FunctionName: 'mmo-dev-catalog-write' },
+    });
+    const catalogWrite = Object.values(functions)[0] as {
+      Properties?: { Environment?: { Variables?: Record<string, unknown> } };
+    };
+    expect(catalogWrite.Properties?.Environment?.Variables?.ADMIN_CLAIM_NAME).toBeUndefined();
   });
 });

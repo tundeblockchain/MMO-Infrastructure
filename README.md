@@ -10,7 +10,7 @@ GitHub (private) ──► CodeStar Connection ──► CodePipeline (self-muta
                                               └──► Prod stage (manual approval)
 
 Dev/Prod stages:
-  Data stack  → DynamoDB + Secrets Manager (Firebase, JWT, internal save key)
+  Data stack  → DynamoDB (game + users) + Secrets Manager (Firebase, JWT, internal save key)
   Api stack   → HTTP API + Lambda handlers
 ```
 
@@ -84,22 +84,21 @@ Signature and expiry are also checked. There is no project-id hardcoded in this 
 it comes from the secret you upload (`mmo-dev/firebase-service-account` or
 `mmo-prod/firebase-service-account`).
 
-### Catalog admin custom claim (Tunde)
+### Catalog admin (users table)
 
-`POST /catalog/{type}/versions` requires a valid Firebase ID token **and** custom
-claim `admin: true` (boolean). Claim name is configurable via the catalog-write
-Lambda environment variable `ADMIN_CLAIM_NAME` (default `admin`).
+`POST /catalog/{type}/versions` requires a valid Firebase ID token **and** a users
+table row whose `accountType` is `admin`. Partition key is Firebase `uid`.
 
-After deploy, set the claim on your Firebase user (Admin SDK or Firebase CLI), then
-refresh the ID token (sign out/in or `getIdToken(true)`):
+New users default to **player**. A missing row is treated as player (the API does
+not insert users-table rows). Promote your own account after deploy:
 
 ```
-# Example: Firebase Admin SDK (run locally with a privileged service account)
-# admin.auth().setCustomUserClaims('<uid>', { admin: true })
+aws dynamodb put-item --table-name mmo-prod-users --item '{"uid":{"S":"<FIREBASE_UID>"},"accountType":{"S":"admin"}}' --region <REGION>
 ```
 
-Missing or invalid/expired tokens return **401**. A valid token without the admin
-claim returns **403**. Catalog GET routes stay public and ignore `Authorization`.
+Use table `mmo-dev-users` for the dev stage. Missing or invalid/expired tokens
+return **401**. A valid token whose account is not admin (no row or `player`)
+returns **403**. Catalog GET routes stay public and ignore `Authorization`.
 
 ### Unity / ZoneServer config (dev)
 
@@ -123,7 +122,7 @@ After the Dev stage deploys, note CloudFormation outputs:
 | GET | `/catalog/versions/latest` | None | Get latest published version per catalog type |
 | GET | `/catalog/versions` | None | List all published catalog versions |
 | GET | `/catalog/{type}/v/{ver}` | None | Get catalog data by type and version |
-| POST | `/catalog/{type}/versions` | Firebase ID token + admin claim | Publish new catalog version |
+| POST | `/catalog/{type}/versions` | Firebase ID token + users-table admin | Publish new catalog version |
 
 ## Documentation
 

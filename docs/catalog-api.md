@@ -83,6 +83,24 @@ This lets us:
 - List all published versions across all catalog types in one query
 - Find the latest published version for a specific catalog type by querying with `begins_with` and sorting descending
 
+### Users table (MMO-27)
+
+Catalog publish authorization lives in a **separate** DynamoDB table. Existing
+game-table keys, GSIs, and names are unchanged.
+
+| Attribute | Type | Notes |
+|-----------|------|--------|
+| **uid** (partition key) | string | Firebase UID |
+| **accountType** | string | `player` or `admin` |
+
+Table names: `mmo-dev-users` (dev), `mmo-prod-users` (prod). A missing row is
+treated as `player`. New users default to player; the API does not insert this
+row. Promote an account with:
+
+```
+aws dynamodb put-item --table-name mmo-prod-users --item '{"uid":{"S":"<FIREBASE_UID>"},"accountType":{"S":"admin"}}' --region <REGION>
+```
+
 ---
 
 ## Version Immutability
@@ -230,7 +248,8 @@ Returns the full catalog data for a specific version.
 
 ## Publishing Catalogs (POST)
 
-Write endpoints require **Firebase JWT authentication** plus an **admin custom claim**.
+Write endpoints require **Firebase JWT authentication** plus a users-table row
+with `accountType` === `admin`. A missing row is treated as player.
 GET catalog routes stay unauthenticated and **ignore** an `Authorization` header if present
 (so mmo-admin can send `Bearer` on every request without breaking ZoneServer).
 
@@ -247,8 +266,8 @@ The request body is a **full replacement** of that catalog type. There is no PAT
 To add, edit, or remove entries, POST the complete new `data` array (or object for
 `combat-constants`). Omitted entries from the previous version are simply not present
 in the new version; old versions remain immutable. New entity ids are accepted —
-runtime validation only checks that `data` is an object (combat-constants) or an array
-(all other types).
+runtime validation only checks that `data` is an object (combat-constants) or a
+non-empty array (all other types). An empty `data` array returns **400**.
 
 **Path Parameters:**
 
@@ -326,9 +345,9 @@ Note: Percentages are expressed as decimals (e.g., 150% → `1.50`, 5% → `0.05
 
 | Status | Meaning |
 |--------|---------|
-| 400 | Invalid catalog type, missing data, or wrong data format |
+| 400 | Invalid catalog type, missing data, empty `data` array, or wrong data format |
 | 401 | Missing, malformed (`Bearer` prefix required), invalid, or expired Firebase token |
-| 403 | Valid token but missing admin custom claim (`admin === true` by default) |
+| 403 | Account is not admin (no users-table row, or `accountType` is not `admin`) |
 | 409 | Version conflict (race condition — retry the request) |
 
 ---
@@ -345,10 +364,20 @@ The token is verified with Firebase Admin `verifyIdToken` (signature, expiry, an
 `aud`/`iss` for the Firebase project in Secrets Manager
 `mmo-{stage}/firebase-service-account`). The user's Firebase UID is recorded as `createdBy`.
 
-**Admin-only:** the verified token must include custom claim `admin: true` (boolean).
-The claim name is the catalog-write Lambda env var `ADMIN_CLAIM_NAME` (default `admin`).
-Without the claim the API returns **403** (do not treat this as "refresh token and retry").
-Expired or invalid tokens return **401** (client should force-refresh the ID token and retry once).
+**Admin-only:** after the token is verified, catalog-write looks up `uid` in the
+users table (`mmo-dev-users` / `mmo-prod-users`). Publish is allowed only when
+`accountType` === `admin`. A missing row is treated as player and returns **403**
+(do not treat this as "refresh token and retry"). New users default to player;
+the API does not insert a users-table row. Expired or invalid tokens return **401**
+(client should force-refresh the ID token and retry once).
+
+Promote an account to admin (placeholders only — no account ids or secrets):
+
+```
+aws dynamodb put-item --table-name mmo-prod-users --item '{"uid":{"S":"<FIREBASE_UID>"},"accountType":{"S":"admin"}}' --region <REGION>
+```
+
+Use `--table-name mmo-dev-users` for the dev stage.
 
 **Getting a Firebase Token:**
 
@@ -377,4 +406,4 @@ For complete request and response schemas, including all catalog data structures
 | Get latest versions | `GET /catalog/versions/latest` | None | Pin these at boot |
 | List all versions | `GET /catalog/versions` | None | Version metadata only |
 | Get catalog data | `GET /catalog/{type}/v/{ver}` | None | Full catalog payload |
-| Publish new version | `POST /catalog/{type}/versions` | Firebase JWT + admin claim | Auto-allocates version |
+| Publish new version | `POST /catalog/{type}/versions` | Firebase JWT + users-table admin | Auto-allocates version |

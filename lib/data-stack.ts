@@ -9,6 +9,7 @@ export interface DataStackProps extends cdk.StackProps {
 
 export class DataStack extends cdk.Stack {
   public readonly table: dynamodb.Table;
+  public readonly usersTable: dynamodb.Table;
   public readonly firebaseSecret: secretsmanager.ISecret;
   public readonly gameJwtSecret: secretsmanager.ISecret;
   public readonly internalSaveApiSecret: secretsmanager.ISecret;
@@ -17,18 +18,20 @@ export class DataStack extends cdk.Stack {
     super(scope, id, props);
 
     const prefix = `mmo-${props.stageName}`;
+    const tableRemovalPolicy =
+      props.stageName === 'prod'
+        ? cdk.RemovalPolicy.RETAIN
+        : cdk.RemovalPolicy.DESTROY;
+    const pointInTimeRecoveryEnabled = props.stageName === 'prod';
 
     this.table = new dynamodb.Table(this, 'GameTable', {
       tableName: `${prefix}-game`,
       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      removalPolicy:
-        props.stageName === 'prod'
-          ? cdk.RemovalPolicy.RETAIN
-          : cdk.RemovalPolicy.DESTROY,
+      removalPolicy: tableRemovalPolicy,
       pointInTimeRecoverySpecification: {
-        pointInTimeRecoveryEnabled: props.stageName === 'prod',
+        pointInTimeRecoveryEnabled,
       },
     });
 
@@ -46,6 +49,18 @@ export class DataStack extends cdk.Stack {
       partitionKey: { name: 'GSI2PK', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'GSI2SK', type: dynamodb.AttributeType.STRING },
       projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    // Users table (MMO-27): Firebase uid → accountType ('player' | 'admin').
+    // Additive only — does not rename or replace the game table.
+    this.usersTable = new dynamodb.Table(this, 'UsersTable', {
+      tableName: `${prefix}-users`,
+      partitionKey: { name: 'uid', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: tableRemovalPolicy,
+      pointInTimeRecoverySpecification: {
+        pointInTimeRecoveryEnabled,
+      },
     });
 
     // Upload Firebase service account JSON to this secret after first deploy.
@@ -79,6 +94,11 @@ export class DataStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'TableName', {
       value: this.table.tableName,
       exportName: `${prefix}-table-name`,
+    });
+
+    new cdk.CfnOutput(this, 'UsersTableName', {
+      value: this.usersTable.tableName,
+      exportName: `${prefix}-users-table-name`,
     });
 
     new cdk.CfnOutput(this, 'GameJwtSecretArn', {

@@ -2,7 +2,8 @@
  * Catalog Write Lambda Handler - MMO-7 / MMO-27
  *
  * Authenticated APIs for publishing new catalog versions.
- * Requires a Firebase ID token with the admin custom claim.
+ * Requires a Firebase ID token whose uid has accountType === 'admin'
+ * in the users table. A missing row is treated as player.
  *
  * Endpoints:
  * - POST /catalog/{catalogType}/versions - Create and publish a new catalog version
@@ -11,14 +12,16 @@
  * - Published versions are IMMUTABLE; attempts to overwrite return 409 Conflict
  * - Each publish automatically allocates the next version number
  * - Firebase JWT required; missing/invalid/expired → 401
- * - Admin custom claim required (default `admin === true`); non-admin → 403
+ * - Users-table accountType === 'admin' required; missing row or player → 403
  * - Body is a full replacement payload (adds and removals vs the previous version)
+ * - Empty `data` arrays are rejected with 400
  */
 
 import { APIGatewayProxyHandlerV2 } from 'aws-lambda';
 import { DynamoDBClient, ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient,
+  GetCommand,
   PutCommand,
   QueryCommand,
 } from '@aws-sdk/lib-dynamodb';
@@ -32,10 +35,13 @@ import {
   getBearerToken,
   parseJsonBody,
 } from '../shared/http';
-import { hasAdminClaim, verifyFirebaseIdToken } from '../shared/auth';
+import { verifyFirebaseIdToken } from '../shared/auth';
 
 const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const tableName = process.env.TABLE_NAME!;
+const usersTableName = process.env.USERS_TABLE_NAME!;
+
+type AccountType = 'player' | 'admin';
 
 const CATALOG_TYPES = [
   'combat-constants',
@@ -87,9 +93,28 @@ type AuthSuccess = { ok: true; accountId: string };
 type AuthFailure = { ok: false; status: 401 | 403; message: string };
 
 /**
- * Verify Firebase JWT from Authorization header and require the admin claim.
+ * Look up accountType for a Firebase uid.
+ * Missing row, missing table name, or any value other than 'admin' → player.
+ */
+async function lookupAccountType(uid: string): Promise<AccountType> {
+  if (!usersTableName) {
+    return 'player';
+  }
+
+  const result = await client.send(
+    new GetCommand({
+      TableName: usersTableName,
+      Key: { uid },
+    })
+  );
+
+  return result.Item?.accountType === 'admin' ? 'admin' : 'player';
+}
+
+/**
+ * Verify Firebase JWT from Authorization header, then require users-table admin.
  * 401: missing Bearer token or verifyIdToken failed (signature / aud / iss / expiry).
- * 403: token is valid but the configured admin claim is not boolean true.
+ * 403: token is valid but the uid is not admin (no row or accountType !== 'admin').
  */
 async function authenticateRequest(
   authorizationHeader?: string
@@ -99,15 +124,20 @@ async function authenticateRequest(
     return { ok: false, status: 401, message: 'Valid Firebase ID token required' };
   }
 
+  let uid: string;
   try {
     const decoded = await verifyFirebaseIdToken(token);
-    if (!hasAdminClaim(decoded)) {
-      return { ok: false, status: 403, message: 'Admin privileges required' };
-    }
-    return { ok: true, accountId: decoded.uid };
+    uid = decoded.uid;
   } catch {
     return { ok: false, status: 401, message: 'Valid Firebase ID token required' };
   }
+
+  const accountType = await lookupAccountType(uid);
+  if (accountType !== 'admin') {
+    return { ok: false, status: 403, message: 'Account is not admin' };
+  }
+
+  return { ok: true, accountId: uid };
 }
 
 function readAuthorizationHeader(
@@ -233,6 +263,9 @@ function validateCatalogData(catalogType: CatalogType, data: unknown): string | 
     case 'resonance':
       if (!Array.isArray(data)) {
         return `${catalogType} data must be an array`;
+      }
+      if (data.length === 0) {
+        return `${catalogType} data must not be an empty array`;
       }
       break;
   }

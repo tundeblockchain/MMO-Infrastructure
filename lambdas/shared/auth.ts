@@ -22,19 +22,6 @@ export async function verifyFirebaseIdToken(idToken: string): Promise<admin.auth
   return admin.auth().verifyIdToken(idToken);
 }
 
-/** Custom claim that marks a Firebase user as a catalog admin. Default: `admin`. */
-export function getAdminClaimName(): string {
-  return process.env.ADMIN_CLAIM_NAME || 'admin';
-}
-
-/**
- * True when the verified ID token has the configured admin claim set to boolean `true`.
- * String `"true"` and other truthy values are rejected.
- */
-export function hasAdminClaim(decoded: admin.auth.DecodedIdToken): boolean {
-  return decoded[getAdminClaimName()] === true;
-}
-
 export async function issueGameSessionToken(
   accountId: string,
   characterId?: string

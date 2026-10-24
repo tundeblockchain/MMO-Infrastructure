@@ -12,6 +12,7 @@ import * as path from 'path';
 export interface ApiStackProps extends cdk.StackProps {
   readonly stageName: string;
   readonly table: dynamodb.ITable;
+  readonly usersTable: dynamodb.ITable;
   readonly firebaseSecret: secretsmanager.ISecret;
   readonly gameJwtSecret: secretsmanager.ISecret;
   readonly internalSaveApiSecret: secretsmanager.ISecret;
@@ -93,7 +94,8 @@ export class ApiStack extends cdk.Stack {
       entry: path.join(lambdasDir, 'catalog-write', 'handler.ts'),
       description: 'Authenticated catalog publish API (MMO-7 / MMO-27)',
     });
-    catalogWriteFn.addEnvironment('ADMIN_CLAIM_NAME', 'admin');
+    catalogWriteFn.addEnvironment('USERS_TABLE_NAME', props.usersTable.tableName);
+    props.usersTable.grantReadData(catalogWriteFn);
 
     const lambdaFunctions = [authSessionFn, charactersFn, charactersSaveFn, catalogWriteFn];
 
