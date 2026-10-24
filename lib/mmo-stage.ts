@@ -7,6 +7,17 @@ export interface MmoStageProps extends cdk.StageProps {
   readonly stageName: string;
 }
 
+/** CloudFormation stack name for a stage's Data or Api stack. Prod only is namespaced. */
+export function cloudFormationStackName(
+  stageName: string,
+  kind: 'Data' | 'Api'
+): string {
+  if (stageName === 'prod') {
+    return `mmo-prod-${kind}`;
+  }
+  return `${stageName}-${kind}`;
+}
+
 export class MmoStage extends cdk.Stage {
   public readonly dataStack: DataStack;
   public readonly apiStack: ApiStack;
@@ -25,16 +36,21 @@ export class MmoStage extends cdk.Stage {
       throw new Error(`MmoStage "${id}" requires a non-empty stageName.`);
     }
 
+    // Prod CloudFormation stack names are namespaced (`mmo-prod-*`) so a
+    // leftover `prod-Data` (REVIEW_IN_PROGRESS) and its EarlyValidation
+    // collision on `mmo-prod-game` can be sidestepped without replacing the
+    // live `dev-Data` / `dev-Api` stacks. Physical resource names still use
+    // `mmo-${stageName}-*` from DataStack / ApiStack.
     this.dataStack = new DataStack(this, 'Data', {
       env,
       stageName: props.stageName,
-      stackName: `${props.stageName}-Data`,
+      stackName: cloudFormationStackName(props.stageName, 'Data'),
     });
 
     this.apiStack = new ApiStack(this, 'Api', {
       env,
       stageName: props.stageName,
-      stackName: `${props.stageName}-Api`,
+      stackName: cloudFormationStackName(props.stageName, 'Api'),
       table: this.dataStack.table,
       firebaseSecret: this.dataStack.firebaseSecret,
       gameJwtSecret: this.dataStack.gameJwtSecret,
