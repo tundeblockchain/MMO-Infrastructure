@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Template, Match } from 'aws-cdk-lib/assertions';
 import { PipelineStack, PipelineStackProps } from '../lib/pipeline-stack';
 import { resolvePipelineContext } from '../lib/pipeline-context';
+import { MmoStage } from '../lib/mmo-stage';
 
 function createTestStack(propsOverride: Partial<PipelineStackProps> = {}): cdk.Stack {
   const app = new cdk.App();
@@ -120,7 +121,7 @@ describe('PipelineStack', () => {
                 build: Match.objectLike({
                   commands: Match.arrayWith([
                     Match.stringLikeRegexp(
-                      'npx cdk synth.*-c githubConnectionArn=.*-c githubOwner=tundeblockchain.*-c githubRepo=MMO-Infrastructure.*-c githubBranch=master.*-c account=\\$\\{CDK_DEFAULT_ACCOUNT\\}.*-c region=\\$\\{CDK_DEFAULT_REGION\\}'
+                      'npx cdk synth.*-c githubConnectionArn=.*-c githubOwner=tundeblockchain.*-c githubRepo=MMO-Infrastructure.*-c githubBranch=master.*-c account=\\$\\{CDK_DEFAULT_ACCOUNT\\}.*-c region=\\$\\{CDK_DEFAULT_REGION\\}.*-c adminEmailAllowlistDev=\\$\\{ADMIN_EMAIL_ALLOWLIST_DEV\\}.*-c adminEmailAllowlistProd=\\$\\{ADMIN_EMAIL_ALLOWLIST_PROD\\}'
                     ),
                   ]),
                 }),
@@ -250,6 +251,37 @@ describe('PipelineStack', () => {
       }
     });
 
+    it('resolves per-stage allowlists from ADMIN_EMAIL_ALLOWLIST_DEV/PROD env', () => {
+      const previousDev = process.env.ADMIN_EMAIL_ALLOWLIST_DEV;
+      const previousProd = process.env.ADMIN_EMAIL_ALLOWLIST_PROD;
+      const previousShared = process.env.ADMIN_EMAIL_ALLOWLIST;
+      process.env.ADMIN_EMAIL_ALLOWLIST_DEV = 'dev-admin@example.com';
+      process.env.ADMIN_EMAIL_ALLOWLIST_PROD = 'prod-admin@example.com';
+      delete process.env.ADMIN_EMAIL_ALLOWLIST;
+      try {
+        const app = new cdk.App({ context: requiredContext });
+        const ctx = resolvePipelineContext(app);
+        expect(ctx.adminEmailAllowlistDev).toBe('dev-admin@example.com');
+        expect(ctx.adminEmailAllowlistProd).toBe('prod-admin@example.com');
+      } finally {
+        if (previousDev === undefined) {
+          delete process.env.ADMIN_EMAIL_ALLOWLIST_DEV;
+        } else {
+          process.env.ADMIN_EMAIL_ALLOWLIST_DEV = previousDev;
+        }
+        if (previousProd === undefined) {
+          delete process.env.ADMIN_EMAIL_ALLOWLIST_PROD;
+        } else {
+          process.env.ADMIN_EMAIL_ALLOWLIST_PROD = previousProd;
+        }
+        if (previousShared === undefined) {
+          delete process.env.ADMIN_EMAIL_ALLOWLIST;
+        } else {
+          process.env.ADMIN_EMAIL_ALLOWLIST = previousShared;
+        }
+      }
+    });
+
     it('uses per-stage admin email allowlist context keys', () => {
       const app = new cdk.App({
         context: {
@@ -299,7 +331,7 @@ describe('PipelineStack', () => {
       });
     });
 
-    it('forwards per-stage admin email allowlists to synth as env vars', () => {
+    it('forwards per-stage admin email allowlists to synth as env vars and -c flags', () => {
       const stack = createTestStack({
         adminEmailAllowlistDev: 'dev-admin@example.com',
         adminEmailAllowlistProd: 'prod-admin@example.com',
@@ -307,6 +339,21 @@ describe('PipelineStack', () => {
       const template = Template.fromStack(stack);
 
       template.hasResourceProperties('AWS::CodeBuild::Project', {
+        Source: {
+          BuildSpec: Match.serializedJson(
+            Match.objectLike({
+              phases: Match.objectLike({
+                build: Match.objectLike({
+                  commands: Match.arrayWith([
+                    Match.stringLikeRegexp(
+                      '-c adminEmailAllowlistDev=\\$\\{ADMIN_EMAIL_ALLOWLIST_DEV\\}.*-c adminEmailAllowlistProd=\\$\\{ADMIN_EMAIL_ALLOWLIST_PROD\\}'
+                    ),
+                  ]),
+                }),
+              }),
+            })
+          ),
+        },
         Environment: Match.objectLike({
           EnvironmentVariables: Match.arrayWith([
             Match.objectLike({
@@ -321,6 +368,52 @@ describe('PipelineStack', () => {
             }),
           ]),
         }),
+      });
+    });
+
+    it('writes non-empty ADMIN_EMAIL_ALLOWLIST on stage users-me Lambdas when context is given', () => {
+      const app = new cdk.App({
+        context: {
+          githubConnectionArn:
+            'arn:aws:codestar-connections:eu-west-2:123456789012:connection/test-conn-id',
+          githubOwner: 'test-owner',
+          githubRepo: 'test-repo',
+          githubBranch: 'main',
+          account: '123456789012',
+          region: 'eu-west-2',
+          adminEmailAllowlistDev: 'dev-admin@example.com',
+          adminEmailAllowlistProd: 'prod-admin@example.com',
+        },
+      });
+      const ctx = resolvePipelineContext(app);
+      const stack = new PipelineStack(app, 'ContextPipelineStack', {
+        env: { account: ctx.account, region: ctx.region },
+        githubConnectionArn: ctx.githubConnectionArn,
+        githubOwner: ctx.githubOwner,
+        githubRepo: ctx.githubRepo,
+        githubBranch: ctx.githubBranch,
+        adminEmailAllowlistDev: ctx.adminEmailAllowlistDev,
+        adminEmailAllowlistProd: ctx.adminEmailAllowlistProd,
+      });
+
+      const devStage = stack.node.findChild('Dev') as MmoStage;
+      const prodStage = stack.node.findChild('Prod') as MmoStage;
+
+      Template.fromStack(devStage.apiStack).hasResourceProperties('AWS::Lambda::Function', {
+        FunctionName: 'mmo-dev-users-me',
+        Environment: {
+          Variables: Match.objectLike({
+            ADMIN_EMAIL_ALLOWLIST: 'dev-admin@example.com',
+          }),
+        },
+      });
+      Template.fromStack(prodStage.apiStack).hasResourceProperties('AWS::Lambda::Function', {
+        FunctionName: 'mmo-prod-users-me',
+        Environment: {
+          Variables: Match.objectLike({
+            ADMIN_EMAIL_ALLOWLIST: 'prod-admin@example.com',
+          }),
+        },
       });
     });
 

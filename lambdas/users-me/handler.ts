@@ -1,16 +1,19 @@
 /**
- * Users Me Lambda Handler - MMO-32
+ * Users Me Lambda Handler
  *
  * Authenticated upsert of the signed-in Firebase user into the users table.
  *
- * POST /users/me
+ * GET /users/me and POST /users/me
  * - 401: missing Bearer token or verifyIdToken failed
  * - 200: { uid, accountType }
  *
  * Promotion (fail closed):
- * - accountType admin only when the verified token has email_verified === true
- *   AND the email (lowercased + trimmed) is on ADMIN_EMAIL_ALLOWLIST
+ * - accountType admin only when the verified token has email_verified true
+ *   (boolean or the string "true") AND the email (lowercased + trimmed) is on
+ *   ADMIN_EMAIL_ALLOWLIST. Email is read from the top-level claim, then from
+ *   firebase.identities.email (Google sign-in).
  * - missing, empty, or non-matching allowlist → upsert player
+ * - an existing player row is promoted when the caller is allowlisted+verified
  * - never downgrade an existing admin
  *
  * Blanket AUTO_ADMIN_ON_LOGIN is ignored. Demote a leftover admin row by hand
@@ -70,6 +73,37 @@ export function normalizeEmail(email: string | undefined): string {
   return (email ?? '').trim().toLowerCase();
 }
 
+/** Firebase Admin types email_verified as boolean; Google tokens may send "true". */
+export function isEmailVerifiedClaim(value: unknown): boolean {
+  if (value === true) {
+    return true;
+  }
+  return typeof value === 'string' && value.trim().toLowerCase() === 'true';
+}
+
+/**
+ * Prefer the top-level email claim, then firebase.identities.email[0]
+ * (Google sign-in sometimes only populates identities).
+ */
+export function readEmailClaim(decoded: {
+  email?: unknown;
+  firebase?: { identities?: { email?: unknown } };
+}): string | undefined {
+  if (typeof decoded.email === 'string' && decoded.email.trim().length > 0) {
+    return decoded.email;
+  }
+  const identities = decoded.firebase?.identities?.email;
+  if (Array.isArray(identities)) {
+    const first = identities.find(
+      (entry) => typeof entry === 'string' && entry.trim().length > 0
+    );
+    if (typeof first === 'string') {
+      return first;
+    }
+  }
+  return undefined;
+}
+
 function isAllowlistedVerifiedEmail(caller: VerifiedCaller): boolean {
   if (caller.emailVerified !== true) {
     return false;
@@ -105,8 +139,8 @@ async function verifyCaller(
     }
     return {
       uid: decoded.uid,
-      email: decoded.email,
-      emailVerified: decoded.email_verified === true,
+      email: readEmailClaim(decoded),
+      emailVerified: isEmailVerifiedClaim(decoded.email_verified),
     };
   } catch {
     return null;
@@ -165,7 +199,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     const method = event.requestContext.http.method;
     const path = event.rawPath;
 
-    if (!(path === '/users/me' && method === 'POST')) {
+    if (path !== '/users/me' || (method !== 'GET' && method !== 'POST')) {
       return notFound('Route not found');
     }
 

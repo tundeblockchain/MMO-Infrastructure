@@ -1,10 +1,11 @@
 /**
- * Users Me Lambda Tests - MMO-32
+ * Users Me Lambda Tests
  *
- * POST /users/me upserts the Firebase uid into the users table.
- * Admin promotion requires email_verified === true AND a normalized
- * email on ADMIN_EMAIL_ALLOWLIST. Missing/empty allowlist fails closed.
- * Existing admins are never demoted. AUTO_ADMIN_ON_LOGIN is ignored.
+ * GET/POST /users/me upserts the Firebase uid into the users table.
+ * Admin promotion requires a verified email (boolean true or string "true")
+ * AND a normalized email on ADMIN_EMAIL_ALLOWLIST. Missing/empty allowlist
+ * fails closed. Existing player rows are promoted; existing admins are
+ * never demoted. AUTO_ADMIN_ON_LOGIN is ignored.
  */
 
 import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
@@ -32,7 +33,13 @@ const VALID_ACCOUNT_ID = 'firebase-user-123';
 const USERS_TABLE_NAME = 'test-users';
 const LISTED_EMAIL = 'admin@example.com';
 
-function decodedToken(overrides?: { email?: string; email_verified?: boolean }) {
+function decodedToken(overrides?: {
+  email?: string;
+  email_verified?: boolean | string;
+  identitiesEmail?: string[];
+  omitEmail?: boolean;
+  sign_in_provider?: string;
+}) {
   return {
     uid: VALID_ACCOUNT_ID,
     aud: 'test-project',
@@ -41,13 +48,15 @@ function decodedToken(overrides?: { email?: string; email_verified?: boolean }) 
     iat: 1704067200,
     iss: 'https://securetoken.google.com/test-project',
     sub: VALID_ACCOUNT_ID,
-    email: overrides?.email ?? LISTED_EMAIL,
+    ...(overrides?.omitEmail ? {} : { email: overrides?.email ?? LISTED_EMAIL }),
     email_verified: overrides?.email_verified ?? true,
     firebase: {
-      identities: {},
-      sign_in_provider: 'password',
+      identities: {
+        ...(overrides?.identitiesEmail ? { email: overrides.identitiesEmail } : {}),
+      },
+      sign_in_provider: overrides?.sign_in_provider ?? 'password',
     },
-  };
+  } as never;
 }
 
 function createMockEvent(
@@ -85,7 +94,9 @@ function createMockEvent(
   };
 }
 
-describe('POST /users/me (MMO-32)', () => {
+const USERS_ME_METHODS = ['GET', 'POST'] as const;
+
+describe.each(USERS_ME_METHODS)('%s /users/me', (method) => {
   beforeAll(() => {
     process.env.USERS_TABLE_NAME = USERS_TABLE_NAME;
   });
@@ -126,7 +137,7 @@ describe('POST /users/me (MMO-32)', () => {
   }
 
   it('should return 401 when no Authorization header is provided', async () => {
-    const result = await handler(createMockEvent('POST', '/users/me'), {} as never, {} as never);
+    const result = await handler(createMockEvent(method, '/users/me'), {} as never, {} as never);
     const response = result as { statusCode: number; body: string };
 
     expect(response.statusCode).toBe(401);
@@ -138,7 +149,7 @@ describe('POST /users/me (MMO-32)', () => {
     mockVerifyFirebaseIdToken.mockRejectedValueOnce(new Error('Token expired'));
 
     const result = await handler(
-      createMockEvent('POST', '/users/me', { authorization: 'Bearer expired-token' }),
+      createMockEvent(method, '/users/me', { authorization: 'Bearer expired-token' }),
       {} as never,
       {} as never
     );
@@ -158,7 +169,7 @@ describe('POST /users/me (MMO-32)', () => {
     ddbMock.on(PutCommand).resolves({});
 
     const result = await handler(
-      createMockEvent('POST', '/users/me', { authorization: VALID_TOKEN }),
+      createMockEvent(method, '/users/me', { authorization: VALID_TOKEN }),
       {} as never,
       {} as never
     );
@@ -174,7 +185,7 @@ describe('POST /users/me (MMO-32)', () => {
     ddbMock.on(PutCommand).resolves({});
 
     const result = await handler(
-      createMockEvent('POST', '/users/me', { authorization: VALID_TOKEN }),
+      createMockEvent(method, '/users/me', { authorization: VALID_TOKEN }),
       {} as never,
       {} as never
     );
@@ -189,7 +200,7 @@ describe('POST /users/me (MMO-32)', () => {
     ddbMock.on(PutCommand).resolves({});
 
     const result = await handler(
-      createMockEvent('POST', '/users/me', { authorization: VALID_TOKEN }),
+      createMockEvent(method, '/users/me', { authorization: VALID_TOKEN }),
       {} as never,
       {} as never
     );
@@ -203,7 +214,7 @@ describe('POST /users/me (MMO-32)', () => {
     ddbMock.on(PutCommand).resolves({});
 
     const result = await handler(
-      createMockEvent('POST', '/users/me', { authorization: VALID_TOKEN }),
+      createMockEvent(method, '/users/me', { authorization: VALID_TOKEN }),
       {} as never,
       {} as never
     );
@@ -217,7 +228,7 @@ describe('POST /users/me (MMO-32)', () => {
     ddbMock.on(PutCommand).resolves({});
 
     const result = await handler(
-      createMockEvent('POST', '/users/me', { authorization: VALID_TOKEN }),
+      createMockEvent(method, '/users/me', { authorization: VALID_TOKEN }),
       {} as never,
       {} as never
     );
@@ -232,7 +243,7 @@ describe('POST /users/me (MMO-32)', () => {
     ddbMock.on(PutCommand).resolves({});
 
     const result = await handler(
-      createMockEvent('POST', '/users/me', { authorization: VALID_TOKEN }),
+      createMockEvent(method, '/users/me', { authorization: VALID_TOKEN }),
       {} as never,
       {} as never
     );
@@ -249,7 +260,7 @@ describe('POST /users/me (MMO-32)', () => {
     });
 
     const result = await handler(
-      createMockEvent('POST', '/users/me', { authorization: VALID_TOKEN }),
+      createMockEvent(method, '/users/me', { authorization: VALID_TOKEN }),
       {} as never,
       {} as never
     );
@@ -271,10 +282,101 @@ describe('POST /users/me (MMO-32)', () => {
     ddbMock.on(PutCommand).resolves({});
 
     const result = await handler(
-      createMockEvent('POST', '/users/me', { authorization: VALID_TOKEN }),
+      createMockEvent(method, '/users/me', { authorization: VALID_TOKEN }),
       {} as never,
       {} as never
     );
     expectPlayerUpsert(result as { statusCode: number; body: string });
+  });
+
+  it('should promote an existing player row when the caller is allowlisted and verified', async () => {
+    process.env.ADMIN_EMAIL_ALLOWLIST = LISTED_EMAIL;
+    mockVerifyFirebaseIdToken.mockResolvedValueOnce(
+      decodedToken({ email: LISTED_EMAIL, email_verified: true })
+    );
+    ddbMock.on(GetCommand).resolves({
+      Item: { uid: VALID_ACCOUNT_ID, accountType: 'player' },
+    });
+    ddbMock.on(PutCommand).resolves({});
+
+    const result = await handler(
+      createMockEvent(method, '/users/me', { authorization: VALID_TOKEN }),
+      {} as never,
+      {} as never
+    );
+    expectAdminUpsert(result as { statusCode: number; body: string });
+  });
+
+  it('should promote when email_verified is the string true (Google sign-in tokens)', async () => {
+    process.env.ADMIN_EMAIL_ALLOWLIST = LISTED_EMAIL;
+    mockVerifyFirebaseIdToken.mockResolvedValueOnce(
+      decodedToken({
+        email: LISTED_EMAIL,
+        email_verified: 'true',
+        sign_in_provider: 'google.com',
+      })
+    );
+    ddbMock.on(PutCommand).resolves({});
+
+    const result = await handler(
+      createMockEvent(method, '/users/me', { authorization: VALID_TOKEN }),
+      {} as never,
+      {} as never
+    );
+    expectAdminUpsert(result as { statusCode: number; body: string });
+  });
+
+  it('should not promote when email_verified is the string false', async () => {
+    process.env.ADMIN_EMAIL_ALLOWLIST = LISTED_EMAIL;
+    mockVerifyFirebaseIdToken.mockResolvedValueOnce(
+      decodedToken({ email: LISTED_EMAIL, email_verified: 'false' })
+    );
+    ddbMock.on(GetCommand).resolves({});
+    ddbMock.on(PutCommand).resolves({});
+
+    const result = await handler(
+      createMockEvent(method, '/users/me', { authorization: VALID_TOKEN }),
+      {} as never,
+      {} as never
+    );
+    expectPlayerUpsert(result as { statusCode: number; body: string });
+  });
+
+  it('should read email from firebase.identities.email when the top-level claim is missing', async () => {
+    process.env.ADMIN_EMAIL_ALLOWLIST = LISTED_EMAIL;
+    mockVerifyFirebaseIdToken.mockResolvedValueOnce(
+      decodedToken({
+        omitEmail: true,
+        email_verified: true,
+        identitiesEmail: [' admin@example.com '],
+        sign_in_provider: 'google.com',
+      })
+    );
+    ddbMock.on(PutCommand).resolves({});
+
+    const result = await handler(
+      createMockEvent(method, '/users/me', { authorization: VALID_TOKEN }),
+      {} as never,
+      {} as never
+    );
+    expectAdminUpsert(result as { statusCode: number; body: string });
+  });
+});
+
+describe('users-me route matching', () => {
+  beforeAll(() => {
+    process.env.USERS_TABLE_NAME = USERS_TABLE_NAME;
+  });
+
+  beforeEach(() => {
+    ddbMock.reset();
+    jest.clearAllMocks();
+    delete process.env.ADMIN_EMAIL_ALLOWLIST;
+  });
+
+  it('should return 404 for methods other than GET and POST', async () => {
+    const result = await handler(createMockEvent('PUT', '/users/me'), {} as never, {} as never);
+    const response = result as { statusCode: number; body: string };
+    expect(response.statusCode).toBe(404);
   });
 });

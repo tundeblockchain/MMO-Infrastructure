@@ -103,7 +103,7 @@ export class ApiStack extends cdk.Stack {
       functionName: `${prefix}-users-me`,
       entry: path.join(lambdasDir, 'users-me', 'handler.ts'),
       description:
-        'Upsert the signed-in Firebase user; promote to admin only if email is verified and allowlisted (MMO-32)',
+        'GET/POST /users/me: upsert the signed-in Firebase user; promote to admin only if email is verified and allowlisted',
     });
     usersMeFn.addEnvironment('USERS_TABLE_NAME', props.usersTable.tableName);
     // Per-stage allowlist from CDK context / props / env. Empty fails closed.
@@ -224,7 +224,7 @@ export class ApiStack extends cdk.Stack {
 
     this.httpApi.addRoutes({
       path: '/users/me',
-      methods: [apigwv2.HttpMethod.POST],
+      methods: [apigwv2.HttpMethod.GET, apigwv2.HttpMethod.POST],
       integration: usersMeIntegration,
     });
 

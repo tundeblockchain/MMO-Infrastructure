@@ -46,6 +46,13 @@ export class PipelineStack extends cdk.Stack {
     // from the SDK (often us-east-1), which would otherwise synth application
     // stacks for the wrong env and leave CodePipeline Prepare actions with no
     // usable StackName ("Stack [null] does not exist").
+    //
+    // Allowlists must be pinned the same way. `cdk deploy PipelineStack -c
+    // adminEmailAllowlistDev=...` only applies to that local synth. The
+    // pipeline CodeBuild synth (and self-mutation) re-runs `cdk synth` without
+    // those CLI flags, so an empty list would deploy to the users-me Lambda.
+    // Persist the values captured at pipeline-deploy time as CodeBuild env,
+    // then pass them back as -c so later synths keep the same lists.
     const synthContextArgs = [
       `-c githubConnectionArn=\${GITHUB_CONNECTION_ARN}`,
       `-c githubOwner=${props.githubOwner}`,
@@ -53,6 +60,8 @@ export class PipelineStack extends cdk.Stack {
       `-c githubBranch=${props.githubBranch}`,
       `-c account=\${CDK_DEFAULT_ACCOUNT}`,
       `-c region=\${CDK_DEFAULT_REGION}`,
+      `-c adminEmailAllowlistDev=\${ADMIN_EMAIL_ALLOWLIST_DEV}`,
+      `-c adminEmailAllowlistProd=\${ADMIN_EMAIL_ALLOWLIST_PROD}`,
     ].join(' ');
 
     const synth = new ShellStep('Synth', {
