@@ -22,9 +22,13 @@ import { handler } from '../lambdas/catalog-write/handler';
 
 const ddbMock = mockClient(DynamoDBDocumentClient);
 
-jest.mock('../lambdas/shared/auth', () => ({
-  verifyFirebaseIdToken: jest.fn(),
-}));
+jest.mock('../lambdas/shared/auth', () => {
+  const actual = jest.requireActual('../lambdas/shared/auth') as typeof import('../lambdas/shared/auth');
+  return {
+    ...actual,
+    verifyFirebaseIdToken: jest.fn(),
+  };
+});
 
 import { verifyFirebaseIdToken } from '../lambdas/shared/auth';
 const mockVerifyFirebaseIdToken = verifyFirebaseIdToken as jest.MockedFunction<
