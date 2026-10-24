@@ -94,7 +94,7 @@ export class ApiStack extends cdk.Stack {
       entry: path.join(lambdasDir, 'catalog-write', 'handler.ts'),
       description: 'Authenticated catalog publish API (MMO-7 / MMO-27)',
     });
-    catalogWriteFn.addEnvironment('USERS_TABLE_NAME', props.usersTable.tableName);
+    catalogWriteFn.addEnvironment('USERS_TABLE_NAME', `${prefix}-users`);
     props.usersTable.grantReadData(catalogWriteFn);
 
     const lambdaFunctions = [authSessionFn, charactersFn, charactersSaveFn, catalogWriteFn];

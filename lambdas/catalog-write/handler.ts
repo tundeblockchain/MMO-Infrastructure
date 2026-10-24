@@ -39,7 +39,6 @@ import { verifyFirebaseIdToken } from '../shared/auth';
 
 const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const tableName = process.env.TABLE_NAME!;
-const usersTableName = process.env.USERS_TABLE_NAME!;
 
 type AccountType = 'player' | 'admin';
 
@@ -97,6 +96,7 @@ type AuthFailure = { ok: false; status: 401 | 403; message: string };
  * Missing row, missing table name, or any value other than 'admin' → player.
  */
 async function lookupAccountType(uid: string): Promise<AccountType> {
+  const usersTableName = process.env.USERS_TABLE_NAME;
   if (!usersTableName) {
     return 'player';
   }

@@ -1,5 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
-import { Match, Template } from 'aws-cdk-lib/assertions';
+import { Template } from 'aws-cdk-lib/assertions';
 import { MmoStage } from '../lib/mmo-stage';
 
 const ENV = { account: '123456789012', region: 'eu-west-2' };
@@ -122,43 +122,43 @@ describe('MMO-27: users table is additive; existing tables and stacks unchanged'
   it('grants catalog-write read-only access to the users table', () => {
     const { dev } = createStages();
     const template = Template.fromStack(dev.apiStack);
-    const users = tableByName(Template.fromStack(dev.dataStack), 'mmo-dev-users');
-
-    template.hasResourceProperties('AWS::IAM::Policy', {
-      PolicyDocument: {
-        Statement: Match.arrayWith([
-          Match.objectLike({
-            Effect: 'Allow',
-            Action: Match.arrayWith(['dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:Scan']),
-            Resource: Match.anyValue(),
-          }),
-        ]),
-      },
-    });
-
     const policies = template.findResources('AWS::IAM::Policy');
-    const serialized = JSON.stringify(policies);
-    expect(serialized).toContain(users.logicalId);
-    expect(serialized).not.toMatch(
-      /"Action":\s*\[(?:[^\]]*"dynamodb:(?:PutItem|UpdateItem|DeleteItem)"[^\]]*)\][^}]*UsersTable/
+
+    const catalogWritePolicy = Object.entries(policies).find(([logicalId]) =>
+      logicalId.startsWith('CatalogWriteFnServiceRoleDefaultPolicy')
+    );
+    expect(catalogWritePolicy).toBeDefined();
+
+    const statements = (
+      catalogWritePolicy?.[1] as {
+        Properties?: { PolicyDocument?: { Statement?: Array<{ Action?: string | string[]; Resource?: unknown }> } };
+      }
+    ).Properties?.PolicyDocument?.Statement ?? [];
+
+    const actionList = (statement: { Action?: string | string[] }): string[] =>
+      Array.isArray(statement.Action)
+        ? statement.Action
+        : statement.Action
+          ? [statement.Action]
+          : [];
+
+    const usersStatements = statements.filter((statement) =>
+      JSON.stringify(statement.Resource ?? '').includes('UsersTable')
+    );
+    expect(usersStatements.length).toBeGreaterThan(0);
+
+    const tableRead = usersStatements.find((statement) =>
+      actionList(statement).includes('dynamodb:GetItem')
+    );
+    expect(tableRead).toBeDefined();
+    expect(actionList(tableRead!)).toEqual(
+      expect.arrayContaining(['dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:Scan'])
     );
 
     const writeActions = ['dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem'];
-    for (const policy of Object.values(policies) as Array<{
-      Properties?: { PolicyDocument?: { Statement?: Array<{ Action?: string | string[]; Resource?: unknown }> } };
-    }>) {
-      for (const statement of policy.Properties?.PolicyDocument?.Statement ?? []) {
-        const actions = Array.isArray(statement.Action)
-          ? statement.Action
-          : statement.Action
-            ? [statement.Action]
-            : [];
-        const touchesUsers = JSON.stringify(statement.Resource ?? '').includes(users.logicalId);
-        if (touchesUsers) {
-          for (const writeAction of writeActions) {
-            expect(actions).not.toContain(writeAction);
-          }
-        }
+    for (const statement of usersStatements) {
+      for (const writeAction of writeActions) {
+        expect(actionList(statement)).not.toContain(writeAction);
       }
     }
   });
