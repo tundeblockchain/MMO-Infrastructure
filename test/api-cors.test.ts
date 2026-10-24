@@ -39,24 +39,28 @@ describe('HTTP API CORS (MMO-26 / MMO-27)', () => {
     });
   });
 
-  it('adds POST /users/me with AUTO_ADMIN_ON_LOGIN default true', () => {
+  it('sets AUTO_ADMIN_ON_LOGIN true on both dev and prod users-me Lambdas', () => {
     const app = new cdk.App();
-    const stage = new MmoStage(app, 'Dev', { env: ENV, stageName: 'dev' });
-    const template = Template.fromStack(stage.apiStack);
+    const dev = new MmoStage(app, 'Dev', { env: ENV, stageName: 'dev' });
+    const prod = new MmoStage(app, 'Prod', { env: ENV, stageName: 'prod' });
 
-    template.hasResourceProperties('AWS::ApiGatewayV2::Route', {
+    const assertFlag = (stack: cdk.Stack, functionName: string) => {
+      Template.fromStack(stack).hasResourceProperties('AWS::Lambda::Function', {
+        FunctionName: functionName,
+        Environment: {
+          Variables: Match.objectLike({
+            AUTO_ADMIN_ON_LOGIN: 'true',
+            USERS_TABLE_NAME: { 'Fn::ImportValue': Match.stringLikeRegexp('UsersTable') },
+          }),
+        },
+      });
+    };
+
+    Template.fromStack(dev.apiStack).hasResourceProperties('AWS::ApiGatewayV2::Route', {
       RouteKey: 'POST /users/me',
     });
-
-    template.hasResourceProperties('AWS::Lambda::Function', {
-      FunctionName: 'mmo-dev-users-me',
-      Environment: {
-        Variables: Match.objectLike({
-          AUTO_ADMIN_ON_LOGIN: 'true',
-          USERS_TABLE_NAME: { 'Fn::ImportValue': Match.stringLikeRegexp('UsersTable') },
-        }),
-      },
-    });
+    assertFlag(dev.apiStack, 'mmo-dev-users-me');
+    assertFlag(prod.apiStack, 'mmo-prod-users-me');
   });
 
   it('does not set ADMIN_CLAIM_NAME on the catalog-write Lambda', () => {

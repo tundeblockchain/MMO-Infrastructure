@@ -96,18 +96,18 @@ or invalid/expired tokens return **401**. A valid token whose account is not adm
 `POST /users/me` with `Authorization: Bearer <Firebase ID token>`. That upserts
 the caller's `uid` into the users table and returns `{ "uid", "accountType" }`.
 
-`AUTO_ADMIN_ON_LOGIN` defaults to `true` (temporary): `POST /users/me` writes
-`accountType: admin`. **TODO(MMO-27):** set `AUTO_ADMIN_ON_LOGIN=false` on the
-`users-me` Lambda to go back to manual admin. When the flag is `false`, the
-endpoint upserts `player` and never downgrades an existing admin.
-
-Manual fallback (flag off):
+`AUTO_ADMIN_ON_LOGIN` is a per-stage flag (dev and prod are both `true` for now).
+When it is exactly `true`, `POST /users/me` writes `accountType: admin`. A missing
+or any other value is treated as off: the endpoint upserts `player` and never
+downgrades an existing admin. Switching the flag off does **not** demote existing
+admins; demote a row by hand:
 
 ```
-aws dynamodb put-item --table-name mmo-prod-users --item '{"uid":{"S":"<FIREBASE_UID>"},"accountType":{"S":"admin"}}' --region <REGION>
+aws dynamodb put-item --table-name mmo-prod-users --item '{"uid":{"S":"<FIREBASE_UID>"},"accountType":{"S":"player"}}' --region <REGION>
 ```
 
-Use table `mmo-dev-users` for the dev stage.
+Promote by hand (same command with `"admin"`) if a stage's flag is off. Use table
+`mmo-dev-users` for the dev stage.
 
 ### Unity / ZoneServer config (dev)
 

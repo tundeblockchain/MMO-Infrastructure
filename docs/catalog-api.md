@@ -95,15 +95,16 @@ game-table keys, GSIs, and names are unchanged.
 
 Table names: `mmo-dev-users` (dev), `mmo-prod-users` (prod). A missing row is
 treated as `player` by catalog publish. `POST /users/me` upserts the signed-in
-caller. While `AUTO_ADMIN_ON_LOGIN` is `true` (temporary default) that write is
-`admin`. **TODO(MMO-27):** set the flag `false` to upsert `player` instead and
-never downgrade an existing admin.
-
-Manual fallback (flag off):
+caller. `AUTO_ADMIN_ON_LOGIN` is per-stage (dev and prod are both `true` for now).
+Only the exact value `true` writes `admin`; a missing or any other value upserts
+`player` and never downgrades an existing admin. Switching the flag off does
+**not** demote existing admins; demote a row by hand:
 
 ```
-aws dynamodb put-item --table-name mmo-prod-users --item '{"uid":{"S":"<FIREBASE_UID>"},"accountType":{"S":"admin"}}' --region <REGION>
+aws dynamodb put-item --table-name mmo-prod-users --item '{"uid":{"S":"<FIREBASE_UID>"},"accountType":{"S":"player"}}' --region <REGION>
 ```
+
+Promote by hand (same command with `"admin"`) if a stage's flag is off.
 
 ---
 
@@ -378,16 +379,17 @@ when `accountType` === `admin`. A missing row is treated as player and returns
 **403** (do not treat this as "refresh token and retry"). Expired or invalid
 tokens return **401** (client should force-refresh the ID token and retry once).
 
-`AUTO_ADMIN_ON_LOGIN` defaults to `true` so `POST /users/me` writes `admin`.
-**TODO(MMO-27):** set `AUTO_ADMIN_ON_LOGIN=false` to go back to manual admin.
-When the flag is `false`, `POST /users/me` upserts `player` and never downgrades
-an existing admin. Manual fallback:
+`AUTO_ADMIN_ON_LOGIN` is per-stage (dev and prod are both `true` for now). Only
+the exact value `true` makes `POST /users/me` write `admin`. A missing or any
+other value upserts `player` and never downgrades an existing admin. Switching
+the flag off does **not** demote existing admins; demote a row by hand:
 
 ```
-aws dynamodb put-item --table-name mmo-prod-users --item '{"uid":{"S":"<FIREBASE_UID>"},"accountType":{"S":"admin"}}' --region <REGION>
+aws dynamodb put-item --table-name mmo-prod-users --item '{"uid":{"S":"<FIREBASE_UID>"},"accountType":{"S":"player"}}' --region <REGION>
 ```
 
-Use `--table-name mmo-dev-users` for the dev stage.
+Promote by hand (same command with `"admin"`) if a stage's flag is off. Use
+`--table-name mmo-dev-users` for the dev stage.
 
 **Getting a Firebase Token:**
 

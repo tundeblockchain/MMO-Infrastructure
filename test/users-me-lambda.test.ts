@@ -2,7 +2,7 @@
  * Users Me Lambda Tests - MMO-27
  *
  * POST /users/me upserts the Firebase uid into the users table.
- * AUTO_ADMIN_ON_LOGIN default true (temporary auto-admin).
+ * AUTO_ADMIN_ON_LOGIN auto-promotes only when the value is exactly 'true'.
  */
 
 import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
@@ -95,6 +95,20 @@ describe('POST /users/me (MMO-27)', () => {
     process.env.AUTO_ADMIN_ON_LOGIN = 'true';
   });
 
+  function expectPlayerUpsert(response: { statusCode: number; body: string }) {
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body)).toEqual({
+      uid: VALID_ACCOUNT_ID,
+      accountType: 'player',
+    });
+    const puts = ddbMock.commandCalls(PutCommand);
+    expect(puts).toHaveLength(1);
+    expect(puts[0].args[0].input).toEqual({
+      TableName: USERS_TABLE_NAME,
+      Item: { uid: VALID_ACCOUNT_ID, accountType: 'player' },
+    });
+  }
+
   it('should return 401 when no Authorization header is provided', async () => {
     const result = await handler(createMockEvent('POST', '/users/me'), {} as never, {} as never);
     const response = result as { statusCode: number; body: string };
@@ -155,20 +169,21 @@ describe('POST /users/me (MMO-27)', () => {
       {} as never,
       {} as never
     );
-    const response = result as { statusCode: number; body: string };
+    expectPlayerUpsert(result as { statusCode: number; body: string });
+  });
 
-    expect(response.statusCode).toBe(200);
-    expect(JSON.parse(response.body)).toEqual({
-      uid: VALID_ACCOUNT_ID,
-      accountType: 'player',
-    });
+  it('should upsert player and never promote when AUTO_ADMIN_ON_LOGIN is unset', async () => {
+    delete process.env.AUTO_ADMIN_ON_LOGIN;
+    mockVerifyFirebaseIdToken.mockResolvedValueOnce(decodedToken());
+    ddbMock.on(GetCommand).resolves({});
+    ddbMock.on(PutCommand).resolves({});
 
-    const puts = ddbMock.commandCalls(PutCommand);
-    expect(puts).toHaveLength(1);
-    expect(puts[0].args[0].input).toEqual({
-      TableName: USERS_TABLE_NAME,
-      Item: { uid: VALID_ACCOUNT_ID, accountType: 'player' },
-    });
+    const result = await handler(
+      createMockEvent('POST', '/users/me', { authorization: VALID_TOKEN }),
+      {} as never,
+      {} as never
+    );
+    expectPlayerUpsert(result as { statusCode: number; body: string });
   });
 
   it('should not downgrade an existing admin when AUTO_ADMIN_ON_LOGIN is false', async () => {

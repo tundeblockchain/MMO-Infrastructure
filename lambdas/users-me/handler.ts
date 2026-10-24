@@ -7,12 +7,13 @@
  * - 401: missing Bearer token or verifyIdToken failed
  * - 200: { uid, accountType }
  *
- * AUTO_ADMIN_ON_LOGIN (default 'true', temporary):
+ * AUTO_ADMIN_ON_LOGIN (per-stage; only exact 'true' auto-promotes):
  * - 'true'  → upsert accountType 'admin'
- * - 'false' → upsert accountType 'player', but never downgrade an existing admin
+ * - missing or any other value → upsert accountType 'player',
+ *   but never downgrade an existing admin
  *
- * TODO(MMO-27): set AUTO_ADMIN_ON_LOGIN=false to go back to manual admin
- * (put-item on mmo-{stage}-users). The table remains the only publish gate.
+ * Switching the flag off does not demote existing admins; change a row to
+ * player by hand with put-item. The table remains the only publish gate.
  */
 
 import { APIGatewayProxyHandlerV2 } from 'aws-lambda';
@@ -41,11 +42,11 @@ export interface UsersMeResponse {
 }
 
 /**
- * Temporary auto-admin switch. Default true.
- * TODO(MMO-27): set AUTO_ADMIN_ON_LOGIN=false to go back to manual admin.
+ * Auto-admin only when the env var is exactly 'true'.
+ * Missing, empty, or any other value is treated as false (never auto-promote).
  */
 function isAutoAdminOnLogin(): boolean {
-  return (process.env.AUTO_ADMIN_ON_LOGIN ?? 'true') !== 'false';
+  return process.env.AUTO_ADMIN_ON_LOGIN === 'true';
 }
 
 function readAuthorizationHeader(

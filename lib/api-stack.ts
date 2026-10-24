@@ -103,8 +103,16 @@ export class ApiStack extends cdk.Stack {
       description: 'Upsert the signed-in Firebase user into the users table (MMO-27)',
     });
     usersMeFn.addEnvironment('USERS_TABLE_NAME', props.usersTable.tableName);
-    // TODO(MMO-27): set AUTO_ADMIN_ON_LOGIN to 'false' to go back to manual admin.
-    usersMeFn.addEnvironment('AUTO_ADMIN_ON_LOGIN', 'true');
+    // Per-stage flag. Both stages are 'true' for now; set a stage to 'false'
+    // later to stop auto-promote. Missing/non-'true' in the handler is false.
+    const autoAdminOnLoginByStage: Record<string, 'true' | 'false'> = {
+      dev: 'true',
+      prod: 'true',
+    };
+    usersMeFn.addEnvironment(
+      'AUTO_ADMIN_ON_LOGIN',
+      autoAdminOnLoginByStage[props.stageName] ?? 'false'
+    );
     props.usersTable.grantReadWriteData(usersMeFn);
     props.firebaseSecret.grantRead(usersMeFn);
 
