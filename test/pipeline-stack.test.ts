@@ -363,25 +363,77 @@ describe('PipelineStack', () => {
           expect.objectContaining({
             stage: 'dev',
             name: 'Data.Prepare',
-            stackName: 'dev-Data',
+            stackName: 'mmo-dev-Data',
           }),
           expect.objectContaining({
             stage: 'dev',
             name: 'Data.Deploy',
-            stackName: 'dev-Data',
+            stackName: 'mmo-dev-Data',
           }),
           expect.objectContaining({
             stage: 'dev',
             name: 'Api.Prepare',
-            stackName: 'dev-Api',
+            stackName: 'mmo-dev-Api',
           }),
           expect.objectContaining({
             stage: 'prod',
             name: 'Data.Prepare',
-            stackName: 'prod-Data',
+            stackName: 'mmo-prod-Data',
           }),
         ])
       );
+    });
+
+    it('prod Prepare and Deploy target the same non-empty stackName and template artifact', () => {
+      const stack = createTestStack();
+      const template = Template.fromStack(stack);
+      const pipelines = template.findResources('AWS::CodePipeline::Pipeline');
+      const prodActions: Array<{
+        name: string;
+        stackName: unknown;
+        changeSetName: unknown;
+        templatePath: unknown;
+      }> = [];
+
+      for (const resource of Object.values(pipelines) as Array<{
+        Properties?: { Stages?: Array<{ Name: string; Actions?: Array<any> }> };
+      }>) {
+        for (const stage of resource.Properties?.Stages ?? []) {
+          if (stage.Name !== 'prod') {
+            continue;
+          }
+          for (const action of stage.Actions ?? []) {
+            if (action.ActionTypeId?.Provider !== 'CloudFormation') {
+              continue;
+            }
+            prodActions.push({
+              name: action.Name,
+              stackName: action.Configuration?.StackName,
+              changeSetName: action.Configuration?.ChangeSetName,
+              templatePath: action.Configuration?.TemplatePath,
+            });
+          }
+        }
+      }
+
+      const pairs = [
+        { prepare: 'Data.Prepare', deploy: 'Data.Deploy', stackName: 'mmo-prod-Data' },
+        { prepare: 'Api.Prepare', deploy: 'Api.Deploy', stackName: 'mmo-prod-Api' },
+      ];
+
+      for (const pair of pairs) {
+        const prepare = prodActions.find((action) => action.name === pair.prepare);
+        const deploy = prodActions.find((action) => action.name === pair.deploy);
+        expect(prepare).toBeDefined();
+        expect(deploy).toBeDefined();
+        expect(prepare?.stackName).toBe(pair.stackName);
+        expect(deploy?.stackName).toBe(pair.stackName);
+        expect(prepare?.changeSetName).toBe('PipelineChange');
+        expect(deploy?.changeSetName).toBe('PipelineChange');
+        expect(typeof prepare?.templatePath).toBe('string');
+        expect(String(prepare?.templatePath).length).toBeGreaterThan(0);
+        expect(String(prepare?.templatePath)).toContain('assembly-PipelineStack-Prod');
+      }
     });
 
     it('synth fails loudly if required githubConnectionArn context is missing', () => {

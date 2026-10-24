@@ -68,10 +68,10 @@ After this, the pipeline **self-mutates** on every push to `develop`. Prod deplo
 ### Firebase service account
 
 1. Firebase Console → Project settings → Service accounts → **Generate new private key**
-2. AWS Secrets Manager → secret `mmo-dev/firebase-service-account`
+2. AWS Secrets Manager → secret `mmo-dev-firebase-service-account`
 3. **Store secret value** → paste the full JSON file contents
 
-Repeat for `mmo-prod/firebase-service-account` when prod is deployed.
+Repeat for `mmo-prod-firebase-service-account` when prod is deployed.
 
 ### Unity / ZoneServer config (dev)
 
@@ -81,7 +81,7 @@ After the Dev stage deploys, note CloudFormation outputs:
 |--------|-----|
 | `ApiUrl` | Unity REST base URL |
 | `GameJwtSecretArn` | ZoneServer JWT verification (read `secret` key) |
-| `mmo-dev/internal-save-api-key` | ZoneServer `PUT /characters/{id}` header `X-Internal-Api-Key` |
+| `mmo-dev-internal-save-api-key` | ZoneServer `PUT /characters/{id}` header `X-Internal-Api-Key` |
 
 ## API endpoints (dev)
 

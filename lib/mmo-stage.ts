@@ -28,13 +28,13 @@ export class MmoStage extends cdk.Stage {
     this.dataStack = new DataStack(this, 'Data', {
       env,
       stageName: props.stageName,
-      stackName: `${props.stageName}-Data`,
+      stackName: `mmo-${props.stageName}-Data`,
     });
 
     this.apiStack = new ApiStack(this, 'Api', {
       env,
       stageName: props.stageName,
-      stackName: `${props.stageName}-Api`,
+      stackName: `mmo-${props.stageName}-Api`,
       table: this.dataStack.table,
       firebaseSecret: this.dataStack.firebaseSecret,
       gameJwtSecret: this.dataStack.gameJwtSecret,

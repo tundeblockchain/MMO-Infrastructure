@@ -50,12 +50,12 @@ export class DataStack extends cdk.Stack {
 
     // Upload Firebase service account JSON to this secret after first deploy.
     this.firebaseSecret = new secretsmanager.Secret(this, 'FirebaseServiceAccount', {
-      secretName: `${prefix}/firebase-service-account`,
+      secretName: `${prefix}-firebase-service-account`,
       description: 'Firebase Admin SDK service account JSON (paste after deploy)',
     });
 
     this.gameJwtSecret = new secretsmanager.Secret(this, 'GameSessionJwtSecret', {
-      secretName: `${prefix}/game-session-jwt`,
+      secretName: `${prefix}-game-session-jwt`,
       description: 'HMAC secret for game session JWTs issued to ZoneServer handshakes',
       generateSecretString: {
         secretStringTemplate: JSON.stringify({}),
@@ -66,7 +66,7 @@ export class DataStack extends cdk.Stack {
     });
 
     this.internalSaveApiSecret = new secretsmanager.Secret(this, 'InternalSaveApiKey', {
-      secretName: `${prefix}/internal-save-api-key`,
+      secretName: `${prefix}-internal-save-api-key`,
       description: 'API key for ZoneServer -> PUT /characters/{id} saves',
       generateSecretString: {
         secretStringTemplate: JSON.stringify({}),
