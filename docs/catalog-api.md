@@ -94,10 +94,11 @@ game-table keys, GSIs, and names are unchanged.
 | **accountType** | string | `player` or `admin` |
 
 Table names: `mmo-dev-users` (dev), `mmo-prod-users` (prod). A missing row is
-treated as `player` by catalog publish. `POST /users/me` upserts the signed-in
-caller. Promotion to `admin` requires `email_verified === true` on the Firebase
+treated as `player` by catalog publish. `GET` or `POST /users/me` upserts the
+signed-in caller. Promotion to `admin` requires a verified email on the Firebase
 token **and** a match on the per-stage allowlist (email is lowercased + trimmed).
-A missing or empty allowlist fails closed. Existing admins are never demoted.
+A missing or empty allowlist fails closed. Existing player rows are promoted;
+existing admins are never demoted.
 
 See [Admin email allowlist](#admin-email-allowlist-per-stage) for add/remove
 and how to demote leftover blanket auto-admin rows.
@@ -374,8 +375,8 @@ The token is verified with Firebase Admin `verifyIdToken` (signature, expiry, an
 `aud`/`iss` for the Firebase project in Secrets Manager
 `mmo-{stage}/firebase-service-account`). The user's Firebase UID is recorded as `createdBy`.
 
-**mmo-admin contract:** after Firebase sign-in, call `POST /users/me` with
-`Authorization: Bearer <Firebase ID token>` **before any publish**. Response
+**mmo-admin contract:** after Firebase sign-in, call `GET` or `POST /users/me`
+with `Authorization: Bearer <Firebase ID token>` **before any publish**. Response
 `200 { "uid", "accountType" }`. Missing/invalid token → **401**.
 
 **Admin-only publish:** after the token is verified, catalog-write looks up `uid`
@@ -386,14 +387,20 @@ tokens return **401** (client should force-refresh the ID token and retry once).
 
 ### Admin email allowlist (per stage)
 
-`POST /users/me` writes `admin` only when the verified Firebase token has
-`email_verified === true` and the email (lowercased + trimmed) appears on that
-stage's comma-separated allowlist. Everyone else is upserted as `player`.
-Missing or empty allowlist → nobody is promoted. Existing admins are never
-demoted automatically. Blanket `AUTO_ADMIN_ON_LOGIN` is off for both stages.
+`GET` and `POST /users/me` write `admin` only when the verified Firebase token
+has `email_verified` true (boolean or the string `"true"`) and the email
+(lowercased + trimmed) appears on that stage's comma-separated allowlist.
+Email is read from the top-level claim, then from `firebase.identities.email`.
+Everyone else is upserted as `player`. Missing or empty allowlist → nobody is
+promoted. An existing `player` row is promoted when the caller is allowlisted
+and verified. Existing admins are never demoted automatically. Blanket
+`AUTO_ADMIN_ON_LOGIN` is off for both stages.
 
 Supply the list via CDK context or env (never hardcode real addresses in the
-repo). Then **redeploy** so the users-me Lambda environment updates.
+repo). Then **redeploy `PipelineStack` locally** so the pipeline synth step
+keeps the lists. A local `-c` flag does not reach the CodeBuild synth; self-mutation
+re-synths without those flags. `npm run deploy:pipeline` needs `--` before
+`-c` or npm swallows the context.
 
 | Stage | CDK context | Environment variable |
 |-------|-------------|----------------------|
@@ -402,7 +409,7 @@ repo). Then **redeploy** so the users-me Lambda environment updates.
 | both (fallback) | `adminEmailAllowlist` | `ADMIN_EMAIL_ALLOWLIST` |
 
 ```powershell
-npx cdk deploy PipelineStack `
+npm run deploy:pipeline -- `
   -c githubConnectionArn=arn:aws:codestar-connections:REGION:ACCOUNT:connection/UUID `
   -c githubOwner=YOUR_ORG `
   -c githubRepo=MMO-Infrastructure `
@@ -424,7 +431,7 @@ aws dynamodb put-item --table-name mmo-prod-users --item '{"uid":{"S":"<FIREBASE
 
 1. User signs in via Firebase Auth (email/password, Google, etc.)
 2. Client calls `firebase.auth().currentUser.getIdToken()`
-3. Client calls `POST /users/me` with that token, then includes it on publish
+3. Client calls `GET` or `POST /users/me` with that token, then includes it on publish
 
 Read endpoints do **not** require authentication. They accept an `Authorization` header
 without error and do not verify it, so unauthenticated ZoneServer reads keep working.
@@ -447,5 +454,5 @@ For complete request and response schemas, including all catalog data structures
 | Get latest versions | `GET /catalog/versions/latest` | None | Pin these at boot |
 | List all versions | `GET /catalog/versions` | None | Version metadata only |
 | Get catalog data | `GET /catalog/{type}/v/{ver}` | None | Full catalog payload |
-| Upsert signed-in user | `POST /users/me` | Firebase JWT | Call after sign-in, before publish |
+| Upsert signed-in user | `GET` or `POST /users/me` | Firebase JWT | Call after sign-in, before publish |
 | Publish new version | `POST /catalog/{type}/versions` | Firebase JWT + users-table admin | Auto-allocates version |

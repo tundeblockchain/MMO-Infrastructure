@@ -62,6 +62,9 @@ describe('HTTP API CORS (MMO-26 / MMO-27)', () => {
     Template.fromStack(dev.apiStack).hasResourceProperties('AWS::ApiGatewayV2::Route', {
       RouteKey: 'POST /users/me',
     });
+    Template.fromStack(dev.apiStack).hasResourceProperties('AWS::ApiGatewayV2::Route', {
+      RouteKey: 'GET /users/me',
+    });
     assertAllowlist(dev.apiStack, 'mmo-dev-users-me');
     assertAllowlist(prod.apiStack, 'mmo-prod-users-me');
   });
