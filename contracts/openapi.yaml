@@ -7,7 +7,7 @@ info:
     
     **Authentication:**
     - Character endpoints use Firebase ID tokens or game session JWTs
-    - Catalog write endpoints require Firebase ID tokens (admin only)
+    - Catalog write endpoints require Firebase ID tokens with custom claim `admin: true` (claim name configurable via `ADMIN_CLAIM_NAME`)
     - Catalog read endpoints are unauthenticated (for ZoneServer caching)
     
     **Catalog Read APIs (MMO-6, MMO-10):**
@@ -29,6 +29,10 @@ info:
     2. POST the full data to `/catalog/{catalogType}/versions` for each catalog type
     3. Each POST returns the newly allocated version number
     4. ZoneServer will pick up new versions on next boot via `/catalog/versions/latest`
+    
+    The POST body is a full replacement. Added and removed entries (relative to the
+    previous published version) are expressed by including or omitting them in `data`.
+    Runtime validation does not reject new entity ids or shorter arrays.
     
     **Multi-type publish:** When releasing coordinated changes across multiple catalog types,
     make separate POST requests for each type. There is no atomic multi-type publish —
@@ -550,7 +554,18 @@ paths:
       description: |
         Creates and publishes a new version of the specified catalog type.
         
-        **Authentication:** Requires a valid Firebase ID token.
+        **Authentication:** Requires `Authorization: Bearer <Firebase ID token>`.
+        The token is verified with Firebase Admin `verifyIdToken` (signature, expiry,
+        `aud`/`iss` = Firebase `project_id` from Secrets Manager
+        `mmo-{stage}/firebase-service-account`).
+        
+        **Admin-only:** the token must include custom claim `admin: true` (boolean).
+        Claim name is Lambda env `ADMIN_CLAIM_NAME` (default `admin`). Missing claim → 403.
+        Missing, malformed (`Bearer` prefix required), invalid, or expired token → 401.
+        
+        **Full replacement:** POST the complete new catalog `data`. There is no PATCH.
+        Entries omitted vs the previous version are removed from the new version only;
+        published versions stay immutable. New entity ids are accepted.
         
         **Version allocation:** The next version number is automatically assigned.
         Published versions are immutable — you cannot modify them after creation.
@@ -841,13 +856,21 @@ paths:
                   value:
                     error: "class data must be an array"
         '401':
-          description: Missing or invalid Firebase token
+          description: Missing, malformed, invalid, or expired Firebase token
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               example:
                 error: "Valid Firebase ID token required"
+        '403':
+          description: Valid Firebase token without the admin custom claim
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Admin privileges required"
         '409':
           description: Version conflict (race condition)
           content:
@@ -868,7 +891,11 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Firebase ID token (required for catalog writes)
+      description: |
+        Firebase ID token for catalog writes. Must be sent as `Authorization: Bearer <token>`.
+        Token `aud`/`iss` must match the Firebase project_id in the uploaded service-account
+        secret. The token must also include custom claim `admin: true` (or the configured
+        `ADMIN_CLAIM_NAME`). GET catalog routes ignore this header if present.
 
   schemas:
     CatalogType:

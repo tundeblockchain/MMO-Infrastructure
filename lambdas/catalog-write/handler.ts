@@ -1,8 +1,8 @@
 /**
- * Catalog Write Lambda Handler - MMO-7
+ * Catalog Write Lambda Handler - MMO-7 / MMO-27
  *
  * Authenticated APIs for publishing new catalog versions.
- * Requires Firebase JWT authentication.
+ * Requires a Firebase ID token with the admin custom claim.
  *
  * Endpoints:
  * - POST /catalog/{catalogType}/versions - Create and publish a new catalog version
@@ -10,7 +10,9 @@
  * Design:
  * - Published versions are IMMUTABLE; attempts to overwrite return 409 Conflict
  * - Each publish automatically allocates the next version number
- * - Firebase JWT required on all write endpoints
+ * - Firebase JWT required; missing/invalid/expired → 401
+ * - Admin custom claim required (default `admin === true`); non-admin → 403
+ * - Body is a full replacement payload (adds and removals vs the previous version)
  */
 
 import { APIGatewayProxyHandlerV2 } from 'aws-lambda';
@@ -24,12 +26,13 @@ import {
   json,
   badRequest,
   unauthorized,
+  forbidden,
   notFound,
   serverError,
   getBearerToken,
   parseJsonBody,
 } from '../shared/http';
-import { verifyFirebaseIdToken } from '../shared/auth';
+import { hasAdminClaim, verifyFirebaseIdToken } from '../shared/auth';
 
 const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const tableName = process.env.TABLE_NAME!;
@@ -80,24 +83,40 @@ export interface PublishedCatalogResponse {
   releaseNotes?: string;
 }
 
+type AuthSuccess = { ok: true; accountId: string };
+type AuthFailure = { ok: false; status: 401 | 403; message: string };
+
 /**
- * Verify Firebase JWT from Authorization header.
- * Returns the user's account ID (Firebase UID) or null if invalid.
+ * Verify Firebase JWT from Authorization header and require the admin claim.
+ * 401: missing Bearer token or verifyIdToken failed (signature / aud / iss / expiry).
+ * 403: token is valid but the configured admin claim is not boolean true.
  */
 async function authenticateRequest(
   authorizationHeader?: string
-): Promise<{ accountId: string } | null> {
+): Promise<AuthSuccess | AuthFailure> {
   const token = getBearerToken(authorizationHeader);
   if (!token) {
-    return null;
+    return { ok: false, status: 401, message: 'Valid Firebase ID token required' };
   }
 
   try {
     const decoded = await verifyFirebaseIdToken(token);
-    return { accountId: decoded.uid };
+    if (!hasAdminClaim(decoded)) {
+      return { ok: false, status: 403, message: 'Admin privileges required' };
+    }
+    return { ok: true, accountId: decoded.uid };
   } catch {
-    return null;
+    return { ok: false, status: 401, message: 'Valid Firebase ID token required' };
   }
+}
+
+function readAuthorizationHeader(
+  headers?: Record<string, string | undefined>
+): string | undefined {
+  if (!headers) {
+    return undefined;
+  }
+  return headers.authorization ?? headers.Authorization;
 }
 
 /**
@@ -226,9 +245,9 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     const method = event.requestContext.http.method;
     const path = event.rawPath;
 
-    const auth = await authenticateRequest(event.headers?.authorization);
-    if (!auth) {
-      return unauthorized('Valid Firebase ID token required');
+    const auth = await authenticateRequest(readAuthorizationHeader(event.headers));
+    if (!auth.ok) {
+      return auth.status === 403 ? forbidden(auth.message) : unauthorized(auth.message);
     }
 
     const publishMatch = path.match(/^\/catalog\/([^/]+)\/versions$/);

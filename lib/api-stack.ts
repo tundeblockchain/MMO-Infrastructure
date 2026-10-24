@@ -91,8 +91,9 @@ export class ApiStack extends cdk.Stack {
     const catalogWriteFn = createLambda('CatalogWriteFn', {
       functionName: `${prefix}-catalog-write`,
       entry: path.join(lambdasDir, 'catalog-write', 'handler.ts'),
-      description: 'Authenticated catalog publish API (MMO-7)',
+      description: 'Authenticated catalog publish API (MMO-7 / MMO-27)',
     });
+    catalogWriteFn.addEnvironment('ADMIN_CLAIM_NAME', 'admin');
 
     const lambdaFunctions = [authSessionFn, charactersFn, charactersSaveFn, catalogWriteFn];
 

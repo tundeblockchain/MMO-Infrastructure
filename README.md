@@ -73,6 +73,34 @@ After this, the pipeline **self-mutates** on every push to `develop`. Prod deplo
 
 Repeat for `mmo-prod/firebase-service-account` when prod is deployed.
 
+The catalog-write Lambda verifies Firebase ID tokens with the Firebase Admin SDK
+(`verifyIdToken`). Audience (`aud`) and issuer (`iss`) must match the **project_id**
+in that service-account JSON:
+
+- `aud` = `<project_id>`
+- `iss` = `https://securetoken.google.com/<project_id>`
+
+Signature and expiry are also checked. There is no project-id hardcoded in this repo;
+it comes from the secret you upload (`mmo-dev/firebase-service-account` or
+`mmo-prod/firebase-service-account`).
+
+### Catalog admin custom claim (Tunde)
+
+`POST /catalog/{type}/versions` requires a valid Firebase ID token **and** custom
+claim `admin: true` (boolean). Claim name is configurable via the catalog-write
+Lambda environment variable `ADMIN_CLAIM_NAME` (default `admin`).
+
+After deploy, set the claim on your Firebase user (Admin SDK or Firebase CLI), then
+refresh the ID token (sign out/in or `getIdToken(true)`):
+
+```
+# Example: Firebase Admin SDK (run locally with a privileged service account)
+# admin.auth().setCustomUserClaims('<uid>', { admin: true })
+```
+
+Missing or invalid/expired tokens return **401**. A valid token without the admin
+claim returns **403**. Catalog GET routes stay public and ignore `Authorization`.
+
 ### Unity / ZoneServer config (dev)
 
 After the Dev stage deploys, note CloudFormation outputs:
@@ -95,7 +123,7 @@ After the Dev stage deploys, note CloudFormation outputs:
 | GET | `/catalog/versions/latest` | None | Get latest published version per catalog type |
 | GET | `/catalog/versions` | None | List all published catalog versions |
 | GET | `/catalog/{type}/v/{ver}` | None | Get catalog data by type and version |
-| POST | `/catalog/{type}/versions` | Firebase ID token | Publish new catalog version |
+| POST | `/catalog/{type}/versions` | Firebase ID token + admin claim | Publish new catalog version |
 
 ## Documentation
 

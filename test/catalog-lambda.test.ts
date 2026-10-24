@@ -17,14 +17,15 @@ const ddbMock = mockClient(DynamoDBDocumentClient);
 
 function createMockEvent(
   method: string,
-  path: string
+  path: string,
+  headers: Record<string, string> = {}
 ): APIGatewayProxyEventV2 {
   return {
     version: '2.0',
     routeKey: `${method} ${path}`,
     rawPath: path,
     rawQueryString: '',
-    headers: {},
+    headers,
     requestContext: {
       accountId: '123456789012',
       apiId: 'api123',
@@ -780,5 +781,72 @@ describe('Admin Entity Response Shapes (MMO-10)', () => {
       expect(readBody.data).toHaveLength(1);
       expect(readBody.data[0].classId).toBe('vanguard');
     });
+  });
+});
+
+/**
+ * mmo-admin will send Authorization: Bearer <Firebase ID token> on every catalog
+ * request, including GETs. Public reads must ignore that header so ZoneServer
+ * (no token) and admin (token present, even expired-looking) both succeed.
+ */
+describe('GET catalog routes accept Authorization without error (MMO-26 / MMO-27)', () => {
+  beforeAll(() => {
+    process.env.TABLE_NAME = 'test-table';
+  });
+
+  beforeEach(() => {
+    ddbMock.reset();
+  });
+
+  it('should return 200 for GET /catalog/versions without Authorization', async () => {
+    ddbMock.on(QueryCommand).resolves({ Items: [] });
+
+    const event = createMockEvent('GET', '/catalog/versions');
+    const result = await handler(event, {} as never, {} as never);
+    const response = result as { statusCode: number; body: string };
+
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body).versions).toEqual([]);
+  });
+
+  it('should return 200 for GET /catalog/versions when Authorization is present', async () => {
+    ddbMock.on(QueryCommand).resolves({ Items: [] });
+
+    const event = createMockEvent('GET', '/catalog/versions', {
+      authorization: 'Bearer expired-or-valid-admin-token',
+    });
+    const result = await handler(event, {} as never, {} as never);
+    const response = result as { statusCode: number; body: string };
+
+    expect(response.statusCode).toBe(200);
+    expect(response.statusCode).not.toBe(401);
+    expect(response.statusCode).not.toBe(403);
+  });
+
+  it('should return 200 for GET /catalog/versions/latest with Authorization', async () => {
+    ddbMock.on(QueryCommand).resolves({ Items: [] });
+
+    const event = createMockEvent('GET', '/catalog/versions/latest', {
+      authorization: 'Bearer admin-firebase-id-token',
+    });
+    const result = await handler(event, {} as never, {} as never);
+    const response = result as { statusCode: number; body: string };
+
+    expect(response.statusCode).toBe(200);
+  });
+
+  it('should return 200 for GET /catalog/{type}/v/{version} with Authorization', async () => {
+    ddbMock.on(GetCommand).resolves({
+      Item: createPublishedCatalog('class', 1, [{ classId: 'vanguard' }]),
+    });
+
+    const event = createMockEvent('GET', '/catalog/class/v/1', {
+      authorization: 'Bearer admin-firebase-id-token',
+    });
+    const result = await handler(event, {} as never, {} as never);
+    const response = result as { statusCode: number; body: string };
+
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body).data).toEqual([{ classId: 'vanguard' }]);
   });
 });

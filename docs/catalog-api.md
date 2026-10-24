@@ -230,7 +230,9 @@ Returns the full catalog data for a specific version.
 
 ## Publishing Catalogs (POST)
 
-Write endpoints require **Firebase JWT authentication**.
+Write endpoints require **Firebase JWT authentication** plus an **admin custom claim**.
+GET catalog routes stay unauthenticated and **ignore** an `Authorization` header if present
+(so mmo-admin can send `Bearer` on every request without breaking ZoneServer).
 
 ### Publish a New Version
 
@@ -240,6 +242,13 @@ Authorization: Bearer <firebase-id-token>
 ```
 
 Creates and publishes a new version of the catalog. The version number is automatically allocated.
+
+The request body is a **full replacement** of that catalog type. There is no PATCH.
+To add, edit, or remove entries, POST the complete new `data` array (or object for
+`combat-constants`). Omitted entries from the previous version are simply not present
+in the new version; old versions remain immutable. New entity ids are accepted —
+runtime validation only checks that `data` is an object (combat-constants) or an array
+(all other types).
 
 **Path Parameters:**
 
@@ -318,7 +327,8 @@ Note: Percentages are expressed as decimals (e.g., 150% → `1.50`, 5% → `0.05
 | Status | Meaning |
 |--------|---------|
 | 400 | Invalid catalog type, missing data, or wrong data format |
-| 401 | Missing or invalid Firebase token |
+| 401 | Missing, malformed (`Bearer` prefix required), invalid, or expired Firebase token |
+| 403 | Valid token but missing admin custom claim (`admin === true` by default) |
 | 409 | Version conflict (race condition — retry the request) |
 
 ---
@@ -331,7 +341,14 @@ Write endpoints require a **Firebase ID token** in the `Authorization` header:
 Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
-The token is verified against Firebase Auth. The user's Firebase UID is recorded as the `createdBy` field.
+The token is verified with Firebase Admin `verifyIdToken` (signature, expiry, and
+`aud`/`iss` for the Firebase project in Secrets Manager
+`mmo-{stage}/firebase-service-account`). The user's Firebase UID is recorded as `createdBy`.
+
+**Admin-only:** the verified token must include custom claim `admin: true` (boolean).
+The claim name is the catalog-write Lambda env var `ADMIN_CLAIM_NAME` (default `admin`).
+Without the claim the API returns **403** (do not treat this as "refresh token and retry").
+Expired or invalid tokens return **401** (client should force-refresh the ID token and retry once).
 
 **Getting a Firebase Token:**
 
@@ -339,7 +356,11 @@ The token is verified against Firebase Auth. The user's Firebase UID is recorded
 2. Client calls `firebase.auth().currentUser.getIdToken()`
 3. Client includes the token in API requests
 
-Read endpoints do **not** require authentication.
+Read endpoints do **not** require authentication. They accept an `Authorization` header
+without error and do not verify it, so unauthenticated ZoneServer reads keep working.
+
+**CORS:** HTTP API preflight allows `Authorization` and `Content-Type` on GET and POST
+from any origin (`*`), including the admin app origin.
 
 ---
 
@@ -356,4 +377,4 @@ For complete request and response schemas, including all catalog data structures
 | Get latest versions | `GET /catalog/versions/latest` | None | Pin these at boot |
 | List all versions | `GET /catalog/versions` | None | Version metadata only |
 | Get catalog data | `GET /catalog/{type}/v/{ver}` | None | Full catalog payload |
-| Publish new version | `POST /catalog/{type}/versions` | Firebase JWT | Auto-allocates version |
+| Publish new version | `POST /catalog/{type}/versions` | Firebase JWT + admin claim | Auto-allocates version |

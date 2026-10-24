@@ -3,9 +3,10 @@
  *
  * Tests for authenticated catalog publish API.
  * Tests cover:
- * - Happy path: publish new version with valid Firebase JWT
- * - Auth: reject missing/invalid JWT
+ * - Happy path: publish new version with valid Firebase JWT + admin claim
+ * - Auth: reject missing/invalid JWT (401), non-admin (403)
  * - Immutability: reject overwrite of published version (409 conflict)
+ * - Full replacement: add and remove entries vs a previous version
  * - Validation: invalid catalog type, invalid payload structure
  */
 
@@ -86,6 +87,7 @@ describe('Catalog Write Lambda Handler', () => {
     it('should publish new catalog version with valid Firebase JWT', async () => {
       mockVerifyFirebaseIdToken.mockResolvedValueOnce({
         uid: VALID_ACCOUNT_ID,
+        admin: true,
         aud: 'test-project',
         auth_time: 1704067200,
         exp: 1704153600,
@@ -126,6 +128,7 @@ describe('Catalog Write Lambda Handler', () => {
     it('should allocate next version number when versions exist', async () => {
       mockVerifyFirebaseIdToken.mockResolvedValueOnce({
         uid: VALID_ACCOUNT_ID,
+        admin: true,
         aud: 'test-project',
         auth_time: 1704067200,
         exp: 1704153600,
@@ -162,6 +165,7 @@ describe('Catalog Write Lambda Handler', () => {
     it('should support combat-constants catalog type with object data', async () => {
       mockVerifyFirebaseIdToken.mockResolvedValueOnce({
         uid: VALID_ACCOUNT_ID,
+        admin: true,
         aud: 'test-project',
         auth_time: 1704067200,
         exp: 1704153600,
@@ -252,6 +256,132 @@ describe('Catalog Write Lambda Handler', () => {
       const response = result as { statusCode: number; body: string };
 
       expect(response.statusCode).toBe(401);
+      expect(response.statusCode).not.toBe(403);
+      expect(response.statusCode).not.toBe(500);
+    });
+
+    it('should return 401 (not 403/500) when the token is expired', async () => {
+      mockVerifyFirebaseIdToken.mockRejectedValueOnce(new Error('Token expired'));
+
+      const event = createMockEvent('POST', '/catalog/class/versions', {
+        authorization: 'Bearer expired-id-token',
+        body: { data: [{ classId: 'vanguard' }] },
+      });
+
+      const result = await handler(event, {} as never, {} as never);
+      const response = result as { statusCode: number; body: string };
+
+      expect(response.statusCode).toBe(401);
+      expect(JSON.parse(response.body).error).toContain('Firebase ID token required');
+    });
+  });
+
+  describe('Authorization - Admin custom claim (MMO-27)', () => {
+    const nonAdminToken = {
+      uid: VALID_ACCOUNT_ID,
+      aud: 'test-project',
+      auth_time: 1704067200,
+      exp: 1704153600,
+      iat: 1704067200,
+      iss: 'https://securetoken.google.com/test-project',
+      sub: VALID_ACCOUNT_ID,
+      firebase: {
+        identities: {},
+        sign_in_provider: 'password',
+      },
+    };
+
+    afterEach(() => {
+      delete process.env.ADMIN_CLAIM_NAME;
+    });
+
+    it('should return 403 when a valid token lacks the admin claim', async () => {
+      mockVerifyFirebaseIdToken.mockResolvedValueOnce(nonAdminToken);
+
+      const event = createMockEvent('POST', '/catalog/class/versions', {
+        authorization: VALID_TOKEN,
+        body: { data: [{ classId: 'vanguard' }] },
+      });
+
+      const result = await handler(event, {} as never, {} as never);
+      const response = result as { statusCode: number; body: string };
+
+      expect(response.statusCode).toBe(403);
+      expect(JSON.parse(response.body).error).toContain('Admin privileges required');
+    });
+
+    it('should return 403 when admin claim is the string "true"', async () => {
+      mockVerifyFirebaseIdToken.mockResolvedValueOnce({
+        ...nonAdminToken,
+        admin: 'true',
+      });
+
+      const event = createMockEvent('POST', '/catalog/class/versions', {
+        authorization: VALID_TOKEN,
+        body: { data: [{ classId: 'vanguard' }] },
+      });
+
+      const result = await handler(event, {} as never, {} as never);
+      const response = result as { statusCode: number; body: string };
+
+      expect(response.statusCode).toBe(403);
+    });
+
+    it('should return 201 when admin claim is boolean true', async () => {
+      mockVerifyFirebaseIdToken.mockResolvedValueOnce({
+        ...nonAdminToken,
+        admin: true,
+      });
+      ddbMock.on(QueryCommand).resolves({ Items: [] });
+      ddbMock.on(PutCommand).resolves({});
+
+      const event = createMockEvent('POST', '/catalog/class/versions', {
+        authorization: VALID_TOKEN,
+        body: { data: [{ classId: 'vanguard' }] },
+      });
+
+      const result = await handler(event, {} as never, {} as never);
+      const response = result as { statusCode: number; body: string };
+
+      expect(response.statusCode).toBe(201);
+    });
+
+    it('should honor a configurable ADMIN_CLAIM_NAME', async () => {
+      process.env.ADMIN_CLAIM_NAME = 'catalogAdmin';
+      mockVerifyFirebaseIdToken.mockResolvedValueOnce({
+        ...nonAdminToken,
+        catalogAdmin: true,
+      });
+      ddbMock.on(QueryCommand).resolves({ Items: [] });
+      ddbMock.on(PutCommand).resolves({});
+
+      const event = createMockEvent('POST', '/catalog/class/versions', {
+        authorization: VALID_TOKEN,
+        body: { data: [{ classId: 'vanguard' }] },
+      });
+
+      const result = await handler(event, {} as never, {} as never);
+      const response = result as { statusCode: number; body: string };
+
+      expect(response.statusCode).toBe(201);
+    });
+
+    it('should return 403 when configurable claim is missing even if admin is true', async () => {
+      process.env.ADMIN_CLAIM_NAME = 'catalogAdmin';
+      mockVerifyFirebaseIdToken.mockResolvedValueOnce({
+        ...nonAdminToken,
+        admin: true,
+      });
+
+      const event = createMockEvent('POST', '/catalog/class/versions', {
+        authorization: VALID_TOKEN,
+        body: { data: [{ classId: 'vanguard' }] },
+      });
+
+      const result = await handler(event, {} as never, {} as never);
+      const response = result as { statusCode: number; body: string };
+
+      expect(response.statusCode).toBe(403);
     });
   });
 
@@ -259,6 +389,7 @@ describe('Catalog Write Lambda Handler', () => {
     it('should return 409 when version already exists (race condition)', async () => {
       mockVerifyFirebaseIdToken.mockResolvedValueOnce({
         uid: VALID_ACCOUNT_ID,
+        admin: true,
         aud: 'test-project',
         auth_time: 1704067200,
         exp: 1704153600,
@@ -301,6 +432,7 @@ describe('Catalog Write Lambda Handler', () => {
     beforeEach(() => {
       mockVerifyFirebaseIdToken.mockResolvedValue({
         uid: VALID_ACCOUNT_ID,
+        admin: true,
         aud: 'test-project',
         auth_time: 1704067200,
         exp: 1704153600,
@@ -414,6 +546,7 @@ describe('Catalog Write Lambda Handler', () => {
     beforeEach(() => {
       mockVerifyFirebaseIdToken.mockResolvedValue({
         uid: VALID_ACCOUNT_ID,
+        admin: true,
         aud: 'test-project',
         auth_time: 1704067200,
         exp: 1704153600,
@@ -458,6 +591,7 @@ describe('Catalog Write Lambda Handler', () => {
     it('should return 500 for DynamoDB errors', async () => {
       mockVerifyFirebaseIdToken.mockResolvedValueOnce({
         uid: VALID_ACCOUNT_ID,
+        admin: true,
         aud: 'test-project',
         auth_time: 1704067200,
         exp: 1704153600,
@@ -505,6 +639,7 @@ describe('All Catalog Types Support', () => {
 
     mockVerifyFirebaseIdToken.mockResolvedValue({
       uid: VALID_ACCOUNT_ID,
+      admin: true,
       aud: 'test-project',
       auth_time: 1704067200,
       exp: 1704153600,
@@ -559,6 +694,7 @@ describe('Admin Publish Scenarios (MMO-11)', () => {
 
     mockVerifyFirebaseIdToken.mockResolvedValue({
       uid: VALID_ACCOUNT_ID,
+      admin: true,
       aud: 'test-project',
       auth_time: 1704067200,
       exp: 1704153600,
@@ -1106,5 +1242,151 @@ describe('Admin Publish Scenarios (MMO-11)', () => {
       expect(item.data).toEqual(classData);
       expect(item.releaseNotes).toBe('Test release');
     });
+  });
+});
+
+/**
+ * Full-replacement publish (MMO-25 / MMO-27).
+ * mmo-admin POSTs the complete draft `data` array/object. Adds and removals
+ * vs the previous published version are expressed by including or omitting
+ * entries — the API does not compare to the prior version and must not reject
+ * new ids or shorter arrays.
+ */
+describe('Full replacement add/remove payloads (MMO-25)', () => {
+  beforeAll(() => {
+    process.env.TABLE_NAME = 'test-table';
+  });
+
+  beforeEach(() => {
+    ddbMock.reset();
+    jest.clearAllMocks();
+
+    mockVerifyFirebaseIdToken.mockResolvedValue({
+      uid: VALID_ACCOUNT_ID,
+      admin: true,
+      aud: 'test-project',
+      auth_time: 1704067200,
+      exp: 1704153600,
+      iat: 1704067200,
+      iss: 'https://securetoken.google.com/test-project',
+      sub: VALID_ACCOUNT_ID,
+      firebase: {
+        identities: {},
+        sign_in_provider: 'password',
+      },
+    });
+
+    ddbMock.on(QueryCommand).resolves({ Items: [{ version: 1 }] });
+    ddbMock.on(PutCommand).resolves({});
+  });
+
+  it('should accept a payload that removes entries vs the previous version', async () => {
+    let capturedItem: unknown = null;
+    ddbMock.on(PutCommand).callsFake((input) => {
+      capturedItem = input.Item;
+      return {};
+    });
+
+    const previousClasses = [
+      { classId: 'vanguard', displayName: 'Vanguard' },
+      { classId: 'ranger', displayName: 'Ranger' },
+      { classId: 'shade', displayName: 'Shade' },
+    ];
+    const nextClasses = [
+      { classId: 'vanguard', displayName: 'Vanguard' },
+      { classId: 'ranger', displayName: 'Ranger' },
+    ];
+
+    expect(nextClasses.length).toBeLessThan(previousClasses.length);
+
+    const event = createMockEvent('POST', '/catalog/class/versions', {
+      authorization: VALID_TOKEN,
+      body: {
+        data: nextClasses,
+        releaseNotes: 'Removed shade',
+      },
+    });
+
+    const result = await handler(event, {} as never, {} as never);
+    const response = result as { statusCode: number; body: string };
+
+    expect(response.statusCode).toBe(201);
+    const removedItem = capturedItem as { data: unknown[] };
+    expect(removedItem.data).toEqual(nextClasses);
+    expect(removedItem.data.some((row) => (row as { classId: string }).classId === 'shade')).toBe(false);
+  });
+
+  it('should accept a payload that adds a new entity id vs the previous version', async () => {
+    let capturedItem: unknown = null;
+    ddbMock.on(PutCommand).callsFake((input) => {
+      capturedItem = input.Item;
+      return {};
+    });
+
+    const nextSkills = [
+      { skillId: 'vanguard_cleaving_strike', classId: 'vanguard', displayName: 'Cleaving Strike' },
+      { skillId: 'vanguard_new_stance', classId: 'vanguard', displayName: 'New Stance' },
+    ];
+
+    const event = createMockEvent('POST', '/catalog/skill/versions', {
+      authorization: VALID_TOKEN,
+      body: {
+        data: nextSkills,
+        releaseNotes: 'Added vanguard_new_stance',
+      },
+    });
+
+    const result = await handler(event, {} as never, {} as never);
+    const response = result as { statusCode: number; body: string };
+
+    expect(response.statusCode).toBe(201);
+    expect((capturedItem as { data: unknown }).data).toEqual(nextSkills);
+  });
+
+  it('should accept a payload that both adds and removes entries', async () => {
+    let capturedItem: unknown = null;
+    ddbMock.on(PutCommand).callsFake((input) => {
+      capturedItem = input.Item;
+      return {};
+    });
+
+    const nextStatuses = [
+      { statusId: 'flame', displayName: 'Flame', category: 'dot' },
+      { statusId: 'new_bleed', displayName: 'Bleed', category: 'dot' },
+    ];
+
+    const event = createMockEvent('POST', '/catalog/status/versions', {
+      authorization: VALID_TOKEN,
+      body: {
+        data: nextStatuses,
+        releaseNotes: 'Removed stealth, added bleed',
+      },
+    });
+
+    const result = await handler(event, {} as never, {} as never);
+    const response = result as { statusCode: number; body: string };
+
+    expect(response.statusCode).toBe(201);
+    const stored = (capturedItem as { data: Array<{ statusId: string }> }).data;
+    expect(stored.map((row) => row.statusId)).toEqual(['flame', 'new_bleed']);
+  });
+
+  it('should accept an empty array as a full catalog wipe of that type', async () => {
+    let capturedItem: unknown = null;
+    ddbMock.on(PutCommand).callsFake((input) => {
+      capturedItem = input.Item;
+      return {};
+    });
+
+    const event = createMockEvent('POST', '/catalog/element/versions', {
+      authorization: VALID_TOKEN,
+      body: { data: [], releaseNotes: 'Clear all elements' },
+    });
+
+    const result = await handler(event, {} as never, {} as never);
+    const response = result as { statusCode: number; body: string };
+
+    expect(response.statusCode).toBe(201);
+    expect((capturedItem as { data: unknown }).data).toEqual([]);
   });
 });
