@@ -55,6 +55,7 @@ export class MmoStage extends cdk.Stage {
       stageName: props.stageName,
       stackName: cloudFormationStackName(props.stageName, 'Api'),
       table: this.dataStack.table,
+      usersTable: this.dataStack.usersTable,
       firebaseSecret: this.dataStack.firebaseSecret,
       gameJwtSecret: this.dataStack.gameJwtSecret,
       internalSaveApiSecret: this.dataStack.internalSaveApiSecret,

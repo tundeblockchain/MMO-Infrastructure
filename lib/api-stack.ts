@@ -12,6 +12,7 @@ import * as path from 'path';
 export interface ApiStackProps extends cdk.StackProps {
   readonly stageName: string;
   readonly table: dynamodb.ITable;
+  readonly usersTable: dynamodb.ITable;
   readonly firebaseSecret: secretsmanager.ISecret;
   readonly gameJwtSecret: secretsmanager.ISecret;
   readonly internalSaveApiSecret: secretsmanager.ISecret;
@@ -91,8 +92,29 @@ export class ApiStack extends cdk.Stack {
     const catalogWriteFn = createLambda('CatalogWriteFn', {
       functionName: `${prefix}-catalog-write`,
       entry: path.join(lambdasDir, 'catalog-write', 'handler.ts'),
-      description: 'Authenticated catalog publish API (MMO-7)',
+      description: 'Authenticated catalog publish API (MMO-7 / MMO-27)',
     });
+    catalogWriteFn.addEnvironment('USERS_TABLE_NAME', props.usersTable.tableName);
+    props.usersTable.grantReadData(catalogWriteFn);
+
+    const usersMeFn = createLambda('UsersMeFn', {
+      functionName: `${prefix}-users-me`,
+      entry: path.join(lambdasDir, 'users-me', 'handler.ts'),
+      description: 'Upsert the signed-in Firebase user into the users table (MMO-27)',
+    });
+    usersMeFn.addEnvironment('USERS_TABLE_NAME', props.usersTable.tableName);
+    // Per-stage flag. Both stages are 'true' for now; set a stage to 'false'
+    // later to stop auto-promote. Missing/non-'true' in the handler is false.
+    const autoAdminOnLoginByStage: Record<string, 'true' | 'false'> = {
+      dev: 'true',
+      prod: 'true',
+    };
+    usersMeFn.addEnvironment(
+      'AUTO_ADMIN_ON_LOGIN',
+      autoAdminOnLoginByStage[props.stageName] ?? 'false'
+    );
+    props.usersTable.grantReadWriteData(usersMeFn);
+    props.firebaseSecret.grantRead(usersMeFn);
 
     const lambdaFunctions = [authSessionFn, charactersFn, charactersSaveFn, catalogWriteFn];
 
@@ -173,6 +195,11 @@ export class ApiStack extends cdk.Stack {
       catalogWriteFn
     );
 
+    const usersMeIntegration = new apigwv2Integrations.HttpLambdaIntegration(
+      'UsersMeIntegration',
+      usersMeFn
+    );
+
     this.httpApi.addRoutes({
       path: '/catalog/versions',
       methods: [apigwv2.HttpMethod.GET],
@@ -195,6 +222,12 @@ export class ApiStack extends cdk.Stack {
       path: '/catalog/{catalogType}/versions',
       methods: [apigwv2.HttpMethod.POST],
       integration: catalogWriteIntegration,
+    });
+
+    this.httpApi.addRoutes({
+      path: '/users/me',
+      methods: [apigwv2.HttpMethod.POST],
+      integration: usersMeIntegration,
     });
 
     new cdk.CfnOutput(this, 'ApiUrl', {

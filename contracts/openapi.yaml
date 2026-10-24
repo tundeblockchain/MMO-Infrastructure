@@ -7,8 +7,9 @@ info:
     
     **Authentication:**
     - Character endpoints use Firebase ID tokens or game session JWTs
-    - Catalog write endpoints require Firebase ID tokens (admin only)
+    - Catalog write endpoints require Firebase ID tokens whose uid has `accountType: admin` in the users table (missing row = player)
     - Catalog read endpoints are unauthenticated (for ZoneServer caching)
+    - mmo-admin must call `POST /users/me` with the Bearer ID token right after sign-in, before any publish
     
     **Catalog Read APIs (MMO-6, MMO-10):**
     GET endpoints for versioned game metadata catalogs. All reads are by explicit version.
@@ -25,10 +26,15 @@ info:
     Published versions are immutable — there is no PATCH or update mechanism.
     
     To update catalog data:
-    1. Prepare the complete new catalog data locally (e.g., from draft in mmo-admin)
-    2. POST the full data to `/catalog/{catalogType}/versions` for each catalog type
-    3. Each POST returns the newly allocated version number
-    4. ZoneServer will pick up new versions on next boot via `/catalog/versions/latest`
+    1. Sign in and call `POST /users/me` with `Authorization: Bearer <Firebase ID token>`
+    2. Prepare the complete new catalog data locally (e.g., from draft in mmo-admin)
+    3. POST the full data to `/catalog/{catalogType}/versions` for each catalog type
+    4. Each POST returns the newly allocated version number
+    5. ZoneServer will pick up new versions on next boot via `/catalog/versions/latest`
+    
+    The POST body is a full replacement. Added and removed entries (relative to the
+    previous published version) are expressed by including or omitting them in `data`.
+    Runtime validation does not reject new entity ids or shorter arrays.
     
     **Multi-type publish:** When releasing coordinated changes across multiple catalog types,
     make separate POST requests for each type. There is no atomic multi-type publish —
@@ -56,6 +62,8 @@ servers:
 tags:
   - name: auth
     description: Authentication and session management
+  - name: users
+    description: Users-table upsert for the signed-in Firebase account
   - name: characters
     description: Character creation, listing, and world entry
   - name: catalog
@@ -79,6 +87,44 @@ paths:
       responses:
         '200':
           description: Game session issued
+
+  /users/me:
+    post:
+      tags: [users]
+      summary: Upsert the signed-in Firebase user into the users table
+      description: |
+        Verifies a Firebase ID token, then upserts `uid` into the users table.
+        **mmo-admin:** call this with `Authorization: Bearer <Firebase ID token>`
+        right after sign-in, before any catalog publish.
+
+        `AUTO_ADMIN_ON_LOGIN` is per-stage (dev and prod are both `true` for now).
+        Only the exact value `true` writes `accountType: admin`. A missing or any
+        other value upserts `player` and never downgrades an existing admin.
+        Switching the flag off does not demote existing admins; demote a row by
+        hand with put-item `accountType: player`.
+
+        Catalog publish still uses the users table as the only admin gate
+        (403 unless `accountType === admin`).
+      security:
+        - firebaseAuth: []
+      responses:
+        '200':
+          description: Caller upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsersMeResponse'
+              example:
+                uid: firebase-uid-abc123
+                accountType: admin
+        '401':
+          description: Missing, malformed, invalid, or expired Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Valid Firebase ID token required"
 
   /characters:
     get:
@@ -550,7 +596,20 @@ paths:
       description: |
         Creates and publishes a new version of the specified catalog type.
         
-        **Authentication:** Requires a valid Firebase ID token.
+        **Authentication:** Requires `Authorization: Bearer <Firebase ID token>`.
+        The token is verified with Firebase Admin `verifyIdToken` (signature, expiry,
+        `aud`/`iss` = Firebase `project_id` from Secrets Manager
+        `mmo-{stage}/firebase-service-account`).
+        
+        **Admin-only:** after token verification, catalog-write looks up `uid` in the
+        users table. Publish is allowed only when `accountType` === `admin`.
+        A missing row is treated as player → 403 (account is not admin).
+        Missing, malformed (`Bearer` prefix required), invalid, or expired token → 401.
+        Empty `data` arrays are rejected with 400.
+        
+        **Full replacement:** POST the complete new catalog `data`. There is no PATCH.
+        Entries omitted vs the previous version are removed from the new version only;
+        published versions stay immutable. New entity ids are accepted.
         
         **Version allocation:** The next version number is automatically assigned.
         Published versions are immutable — you cannot modify them after creation.
@@ -840,14 +899,26 @@ paths:
                   summary: Wrong data format
                   value:
                     error: "class data must be an array"
+                emptyArray:
+                  summary: Empty data array
+                  value:
+                    error: "class data must not be an empty array"
         '401':
-          description: Missing or invalid Firebase token
+          description: Missing, malformed, invalid, or expired Firebase token
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               example:
                 error: "Valid Firebase ID token required"
+        '403':
+          description: account is not admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Account is not admin"
         '409':
           description: Version conflict (race condition)
           content:
@@ -868,7 +939,12 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Firebase ID token (required for catalog writes)
+      description: |
+        Firebase ID token for catalog writes. Must be sent as `Authorization: Bearer <token>`.
+        Token `aud`/`iss` must match the Firebase project_id in the uploaded service-account
+        secret. After verification, the uid must have `accountType: admin` in the users
+        table (missing row = player → 403, account is not admin).
+        GET catalog routes ignore this header if present.
 
   schemas:
     CatalogType:
@@ -1007,22 +1083,27 @@ components:
           oneOf:
             - $ref: '#/components/schemas/CombatConstantsData'
             - type: array
+              minItems: 1
               items:
                 $ref: '#/components/schemas/ClassDefinition'
               description: Array of ClassDefinition for class catalog
             - type: array
+              minItems: 1
               items:
                 $ref: '#/components/schemas/SkillDefinition'
               description: Array of SkillDefinition for skill catalog
             - type: array
+              minItems: 1
               items:
                 $ref: '#/components/schemas/StatusDefinition'
               description: Array of StatusDefinition for status catalog
             - type: array
+              minItems: 1
               items:
                 $ref: '#/components/schemas/ElementDefinition'
               description: Array of ElementDefinition for element catalog
             - type: array
+              minItems: 1
               items:
                 $ref: '#/components/schemas/ResonanceDefinition'
               description: Array of ResonanceDefinition for resonance catalog
@@ -1104,6 +1185,20 @@ components:
           type: number
         z:
           type: number
+
+    UsersMeResponse:
+      type: object
+      required:
+        - uid
+        - accountType
+      properties:
+        uid:
+          type: string
+          description: Firebase UID of the signed-in caller
+        accountType:
+          type: string
+          enum: [player, admin]
+          description: Users-table account type after upsert
 
     Error:
       type: object

@@ -10,6 +10,8 @@
  * - GET /catalog/{catalogType}/v/{version}   - Get full catalog by type and version (published only)
  *
  * All endpoints are unauthenticated (game server reads).
+ * An Authorization header (e.g. from mmo-admin) is ignored — GETs never
+ * 401/403, so ZoneServer can keep calling without a token.
  */
 
 import { APIGatewayProxyHandlerV2 } from 'aws-lambda';

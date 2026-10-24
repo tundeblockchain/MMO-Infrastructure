@@ -18,6 +18,10 @@ export function unauthorized(message = 'Unauthorized'): APIGatewayProxyResultV2 
   return json(401, { error: message });
 }
 
+export function forbidden(message = 'Forbidden'): APIGatewayProxyResultV2 {
+  return json(403, { error: message });
+}
+
 export function notFound(message = 'Not found'): APIGatewayProxyResultV2 {
   return json(404, { error: message });
 }

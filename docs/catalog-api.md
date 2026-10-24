@@ -83,6 +83,29 @@ This lets us:
 - List all published versions across all catalog types in one query
 - Find the latest published version for a specific catalog type by querying with `begins_with` and sorting descending
 
+### Users table (MMO-27)
+
+Catalog publish authorization lives in a **separate** DynamoDB table. Existing
+game-table keys, GSIs, and names are unchanged.
+
+| Attribute | Type | Notes |
+|-----------|------|--------|
+| **uid** (partition key) | string | Firebase UID |
+| **accountType** | string | `player` or `admin` |
+
+Table names: `mmo-dev-users` (dev), `mmo-prod-users` (prod). A missing row is
+treated as `player` by catalog publish. `POST /users/me` upserts the signed-in
+caller. `AUTO_ADMIN_ON_LOGIN` is per-stage (dev and prod are both `true` for now).
+Only the exact value `true` writes `admin`; a missing or any other value upserts
+`player` and never downgrades an existing admin. Switching the flag off does
+**not** demote existing admins; demote a row by hand:
+
+```
+aws dynamodb put-item --table-name mmo-prod-users --item '{"uid":{"S":"<FIREBASE_UID>"},"accountType":{"S":"player"}}' --region <REGION>
+```
+
+Promote by hand (same command with `"admin"`) if a stage's flag is off.
+
 ---
 
 ## Version Immutability
@@ -230,7 +253,10 @@ Returns the full catalog data for a specific version.
 
 ## Publishing Catalogs (POST)
 
-Write endpoints require **Firebase JWT authentication**.
+Write endpoints require **Firebase JWT authentication** plus a users-table row
+with `accountType` === `admin`. A missing row is treated as player.
+GET catalog routes stay unauthenticated and **ignore** an `Authorization` header if present
+(so mmo-admin can send `Bearer` on every request without breaking ZoneServer).
 
 ### Publish a New Version
 
@@ -240,6 +266,13 @@ Authorization: Bearer <firebase-id-token>
 ```
 
 Creates and publishes a new version of the catalog. The version number is automatically allocated.
+
+The request body is a **full replacement** of that catalog type. There is no PATCH.
+To add, edit, or remove entries, POST the complete new `data` array (or object for
+`combat-constants`). Omitted entries from the previous version are simply not present
+in the new version; old versions remain immutable. New entity ids are accepted —
+runtime validation only checks that `data` is an object (combat-constants) or a
+non-empty array (all other types). An empty `data` array returns **400**.
 
 **Path Parameters:**
 
@@ -317,8 +350,9 @@ Note: Percentages are expressed as decimals (e.g., 150% → `1.50`, 5% → `0.05
 
 | Status | Meaning |
 |--------|---------|
-| 400 | Invalid catalog type, missing data, or wrong data format |
-| 401 | Missing or invalid Firebase token |
+| 400 | Invalid catalog type, missing data, empty `data` array, or wrong data format |
+| 401 | Missing, malformed (`Bearer` prefix required), invalid, or expired Firebase token |
+| 403 | Account is not admin (no users-table row, or `accountType` is not `admin`) |
 | 409 | Version conflict (race condition — retry the request) |
 
 ---
@@ -331,15 +365,43 @@ Write endpoints require a **Firebase ID token** in the `Authorization` header:
 Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
-The token is verified against Firebase Auth. The user's Firebase UID is recorded as the `createdBy` field.
+The token is verified with Firebase Admin `verifyIdToken` (signature, expiry, and
+`aud`/`iss` for the Firebase project in Secrets Manager
+`mmo-{stage}/firebase-service-account`). The user's Firebase UID is recorded as `createdBy`.
+
+**mmo-admin contract:** after Firebase sign-in, call `POST /users/me` with
+`Authorization: Bearer <Firebase ID token>` **before any publish**. Response
+`200 { "uid", "accountType" }`. Missing/invalid token → **401**.
+
+**Admin-only publish:** after the token is verified, catalog-write looks up `uid`
+in the users table (`mmo-dev-users` / `mmo-prod-users`). Publish is allowed only
+when `accountType` === `admin`. A missing row is treated as player and returns
+**403** (do not treat this as "refresh token and retry"). Expired or invalid
+tokens return **401** (client should force-refresh the ID token and retry once).
+
+`AUTO_ADMIN_ON_LOGIN` is per-stage (dev and prod are both `true` for now). Only
+the exact value `true` makes `POST /users/me` write `admin`. A missing or any
+other value upserts `player` and never downgrades an existing admin. Switching
+the flag off does **not** demote existing admins; demote a row by hand:
+
+```
+aws dynamodb put-item --table-name mmo-prod-users --item '{"uid":{"S":"<FIREBASE_UID>"},"accountType":{"S":"player"}}' --region <REGION>
+```
+
+Promote by hand (same command with `"admin"`) if a stage's flag is off. Use
+`--table-name mmo-dev-users` for the dev stage.
 
 **Getting a Firebase Token:**
 
 1. User signs in via Firebase Auth (email/password, Google, etc.)
 2. Client calls `firebase.auth().currentUser.getIdToken()`
-3. Client includes the token in API requests
+3. Client calls `POST /users/me` with that token, then includes it on publish
 
-Read endpoints do **not** require authentication.
+Read endpoints do **not** require authentication. They accept an `Authorization` header
+without error and do not verify it, so unauthenticated ZoneServer reads keep working.
+
+**CORS:** HTTP API preflight allows `Authorization` and `Content-Type` on GET and POST
+from any origin (`*`), including the admin app origin.
 
 ---
 
@@ -356,4 +418,5 @@ For complete request and response schemas, including all catalog data structures
 | Get latest versions | `GET /catalog/versions/latest` | None | Pin these at boot |
 | List all versions | `GET /catalog/versions` | None | Version metadata only |
 | Get catalog data | `GET /catalog/{type}/v/{ver}` | None | Full catalog payload |
-| Publish new version | `POST /catalog/{type}/versions` | Firebase JWT | Auto-allocates version |
+| Upsert signed-in user | `POST /users/me` | Firebase JWT | Call after sign-in, before publish |
+| Publish new version | `POST /catalog/{type}/versions` | Firebase JWT + users-table admin | Auto-allocates version |

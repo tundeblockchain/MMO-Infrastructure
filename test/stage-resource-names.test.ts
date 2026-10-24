@@ -52,7 +52,7 @@ function createStages(): { dev: MmoStage; prod: MmoStage } {
   };
 }
 
-/** Physical names on main (MMO-22). Must stay identical for both stages. */
+/** Physical names on main (MMO-22 / MMO-24). Must stay present after additive users tables. */
 const MAIN_DEV_PHYSICAL_NAMES = [
   'mmo-dev-api',
   'mmo-dev-auth-session',
@@ -78,6 +78,9 @@ const MAIN_PROD_PHYSICAL_NAMES = [
   'mmo-prod-game',
   'mmo-prod/internal-save-api-key',
 ].sort();
+
+const ADDED_DEV_NAMES = ['mmo-dev-users', 'mmo-dev-users-me'];
+const ADDED_PROD_NAMES = ['mmo-prod-users', 'mmo-prod-users-me'];
 
 describe('MMO-24: prod CloudFormation stack names only', () => {
   it('namespaces only the prod CloudFormation stack names', () => {
@@ -117,14 +120,18 @@ describe('MMO-24: prod CloudFormation stack names only', () => {
     expect((prodData as cdk.Stack).stackName).toBe('mmo-prod-Data');
   });
 
-  it('dev physical names are unchanged vs main', () => {
+  it('dev physical names keep every main resource and only add users table + users-me', () => {
     const { dev } = createStages();
     const devNames = [
       ...collectHardcodedNames(dev.dataStack),
       ...collectHardcodedNames(dev.apiStack),
     ].map((row) => row.physicalName);
 
-    expect(devNames.sort()).toEqual(MAIN_DEV_PHYSICAL_NAMES);
+    expect(devNames).toEqual(expect.arrayContaining(MAIN_DEV_PHYSICAL_NAMES));
+    expect(devNames.filter((name) => !ADDED_DEV_NAMES.includes(name)).sort()).toEqual(
+      MAIN_DEV_PHYSICAL_NAMES
+    );
+    expect(devNames).toEqual(expect.arrayContaining(ADDED_DEV_NAMES));
   });
 
   it('prod table name stays mmo-prod-game and other prod physical names stay on main', () => {
@@ -133,18 +140,25 @@ describe('MMO-24: prod CloudFormation stack names only', () => {
     prodData.hasResourceProperties('AWS::DynamoDB::Table', {
       TableName: 'mmo-prod-game',
     });
+    prodData.hasResourceProperties('AWS::DynamoDB::Table', {
+      TableName: 'mmo-prod-users',
+    });
 
     const prodNames = [
       ...collectHardcodedNames(prod.dataStack),
       ...collectHardcodedNames(prod.apiStack),
     ].map((row) => row.physicalName);
 
-    expect(prodNames.sort()).toEqual(MAIN_PROD_PHYSICAL_NAMES);
+    expect(prodNames).toEqual(expect.arrayContaining(MAIN_PROD_PHYSICAL_NAMES));
+    expect(prodNames.filter((name) => !ADDED_PROD_NAMES.includes(name)).sort()).toEqual(
+      MAIN_PROD_PHYSICAL_NAMES
+    );
     expect(prodNames).toContain('mmo-prod-game');
+    expect(prodNames).toEqual(expect.arrayContaining(ADDED_PROD_NAMES));
     expect(prodNames).not.toContain('mmo-prod-game-v2');
   });
 
-  it('does not rename tables, secrets, or lambdas when only prod stack names change', () => {
+  it('does not rename existing tables, secrets, or lambdas when adding the users table', () => {
     const { dev, prod } = createStages();
     const byType = (stage: MmoStage, type: string) =>
       [
@@ -155,8 +169,8 @@ describe('MMO-24: prod CloudFormation stack names only', () => {
         .map((row) => row.physicalName)
         .sort();
 
-    expect(byType(dev, 'AWS::DynamoDB::Table')).toEqual(['mmo-dev-game']);
-    expect(byType(prod, 'AWS::DynamoDB::Table')).toEqual(['mmo-prod-game']);
+    expect(byType(dev, 'AWS::DynamoDB::Table')).toEqual(['mmo-dev-game', 'mmo-dev-users']);
+    expect(byType(prod, 'AWS::DynamoDB::Table')).toEqual(['mmo-prod-game', 'mmo-prod-users']);
     expect(byType(dev, 'AWS::SecretsManager::Secret')).toEqual([
       'mmo-dev/firebase-service-account',
       'mmo-dev/game-session-jwt',
@@ -173,6 +187,7 @@ describe('MMO-24: prod CloudFormation stack names only', () => {
       'mmo-dev-catalog-write',
       'mmo-dev-characters',
       'mmo-dev-characters-save',
+      'mmo-dev-users-me',
     ]);
     expect(byType(prod, 'AWS::Lambda::Function')).toEqual([
       'mmo-prod-auth-session',
@@ -180,6 +195,7 @@ describe('MMO-24: prod CloudFormation stack names only', () => {
       'mmo-prod-catalog-write',
       'mmo-prod-characters',
       'mmo-prod-characters-save',
+      'mmo-prod-users-me',
     ]);
   });
 });

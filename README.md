@@ -10,7 +10,7 @@ GitHub (private) ──► CodeStar Connection ──► CodePipeline (self-muta
                                               └──► Prod stage (manual approval)
 
 Dev/Prod stages:
-  Data stack  → DynamoDB + Secrets Manager (Firebase, JWT, internal save key)
+  Data stack  → DynamoDB (game + users) + Secrets Manager (Firebase, JWT, internal save key)
   Api stack   → HTTP API + Lambda handlers
 ```
 
@@ -73,6 +73,42 @@ After this, the pipeline **self-mutates** on every push to `develop`. Prod deplo
 
 Repeat for `mmo-prod/firebase-service-account` when prod is deployed.
 
+The catalog-write Lambda verifies Firebase ID tokens with the Firebase Admin SDK
+(`verifyIdToken`). Audience (`aud`) and issuer (`iss`) must match the **project_id**
+in that service-account JSON:
+
+- `aud` = `<project_id>`
+- `iss` = `https://securetoken.google.com/<project_id>`
+
+Signature and expiry are also checked. There is no project-id hardcoded in this repo;
+it comes from the secret you upload (`mmo-dev/firebase-service-account` or
+`mmo-prod/firebase-service-account`).
+
+### Catalog admin (users table)
+
+`POST /catalog/{type}/versions` requires a valid Firebase ID token **and** a users
+table row whose `accountType` is `admin`. Partition key is Firebase `uid`. Missing
+or invalid/expired tokens return **401**. A valid token whose account is not admin
+(no row or `player`) returns **403**. Catalog GET routes stay public and ignore
+`Authorization`.
+
+**mmo-admin contract:** right after Firebase sign-in, before any publish, call
+`POST /users/me` with `Authorization: Bearer <Firebase ID token>`. That upserts
+the caller's `uid` into the users table and returns `{ "uid", "accountType" }`.
+
+`AUTO_ADMIN_ON_LOGIN` is a per-stage flag (dev and prod are both `true` for now).
+When it is exactly `true`, `POST /users/me` writes `accountType: admin`. A missing
+or any other value is treated as off: the endpoint upserts `player` and never
+downgrades an existing admin. Switching the flag off does **not** demote existing
+admins; demote a row by hand:
+
+```
+aws dynamodb put-item --table-name mmo-prod-users --item '{"uid":{"S":"<FIREBASE_UID>"},"accountType":{"S":"player"}}' --region <REGION>
+```
+
+Promote by hand (same command with `"admin"`) if a stage's flag is off. Use table
+`mmo-dev-users` for the dev stage.
+
 ### Unity / ZoneServer config (dev)
 
 After the Dev stage deploys, note CloudFormation outputs:
@@ -95,7 +131,8 @@ After the Dev stage deploys, note CloudFormation outputs:
 | GET | `/catalog/versions/latest` | None | Get latest published version per catalog type |
 | GET | `/catalog/versions` | None | List all published catalog versions |
 | GET | `/catalog/{type}/v/{ver}` | None | Get catalog data by type and version |
-| POST | `/catalog/{type}/versions` | Firebase ID token | Publish new catalog version |
+| POST | `/users/me` | Firebase ID token | Upsert caller into users table (`admin` while `AUTO_ADMIN_ON_LOGIN=true`) |
+| POST | `/catalog/{type}/versions` | Firebase ID token + users-table admin | Publish new catalog version |
 
 ## Documentation
 
