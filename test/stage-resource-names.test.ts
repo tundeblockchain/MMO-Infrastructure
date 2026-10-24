@@ -153,19 +153,25 @@ describe('MMO-23: stage-scoped physical names', () => {
     expect(allTableNames).not.toContain('mmo-dev-game');
     expect(allTableNames).not.toContain('mmo-prod-game');
 
-    const assertLambdaTableEnv = (template: Template, tableName: string) => {
+    const assertLambdaTableEnv = (template: Template, dataStackName: string) => {
       const functions = template.findResources('AWS::Lambda::Function');
       const tableEnvs = Object.values(functions).map((resource) => {
         const vars = (resource as {
-          Properties?: { Environment?: { Variables?: { TABLE_NAME?: string } } };
+          Properties?: { Environment?: { Variables?: { TABLE_NAME?: unknown } } };
         }).Properties?.Environment?.Variables;
         return vars?.TABLE_NAME;
       });
       expect(tableEnvs.length).toBeGreaterThan(0);
-      expect(new Set(tableEnvs)).toEqual(new Set([tableName]));
+      for (const value of tableEnvs) {
+        expect(value).toEqual({
+          'Fn::ImportValue': expect.stringContaining(`${dataStackName}:`),
+        });
+        expect(JSON.stringify(value)).not.toContain('mmo-dev-game"');
+        expect(JSON.stringify(value)).not.toContain('mmo-prod-game"');
+      }
     };
 
-    assertLambdaTableEnv(devApi, 'mmo-dev-game-v2');
-    assertLambdaTableEnv(prodApi, 'mmo-prod-game-v2');
+    assertLambdaTableEnv(devApi, 'mmo-dev-Data');
+    assertLambdaTableEnv(prodApi, 'mmo-prod-Data');
   });
 });
