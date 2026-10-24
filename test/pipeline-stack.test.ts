@@ -362,22 +362,22 @@ describe('PipelineStack', () => {
         expect.arrayContaining([
           expect.objectContaining({
             stage: 'dev',
-            name: 'Data.Prepare',
+            name: 'mmo-dev-Data.Prepare',
             stackName: 'mmo-dev-Data',
           }),
           expect.objectContaining({
             stage: 'dev',
-            name: 'Data.Deploy',
+            name: 'mmo-dev-Data.Deploy',
             stackName: 'mmo-dev-Data',
           }),
           expect.objectContaining({
             stage: 'dev',
-            name: 'Api.Prepare',
+            name: 'mmo-dev-Api.Prepare',
             stackName: 'mmo-dev-Api',
           }),
           expect.objectContaining({
             stage: 'prod',
-            name: 'Data.Prepare',
+            name: 'mmo-prod-Data.Prepare',
             stackName: 'mmo-prod-Data',
           }),
         ])
@@ -417,8 +417,16 @@ describe('PipelineStack', () => {
       }
 
       const pairs = [
-        { prepare: 'Data.Prepare', deploy: 'Data.Deploy', stackName: 'mmo-prod-Data' },
-        { prepare: 'Api.Prepare', deploy: 'Api.Deploy', stackName: 'mmo-prod-Api' },
+        {
+          prepare: 'mmo-prod-Data.Prepare',
+          deploy: 'mmo-prod-Data.Deploy',
+          stackName: 'mmo-prod-Data',
+        },
+        {
+          prepare: 'mmo-prod-Api.Prepare',
+          deploy: 'mmo-prod-Api.Deploy',
+          stackName: 'mmo-prod-Api',
+        },
       ];
 
       for (const pair of pairs) {
@@ -432,7 +440,9 @@ describe('PipelineStack', () => {
         expect(deploy?.changeSetName).toBe('PipelineChange');
         expect(typeof prepare?.templatePath).toBe('string');
         expect(String(prepare?.templatePath).length).toBeGreaterThan(0);
-        expect(String(prepare?.templatePath)).toContain('assembly-PipelineStack-Prod');
+        expect(String(prepare?.templatePath)).toMatch(
+          /assembly-.*-Prod\/.*\.template\.json$/
+        );
       }
     });
 
