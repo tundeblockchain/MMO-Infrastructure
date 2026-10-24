@@ -376,12 +376,105 @@ describe('PipelineStack', () => {
             stackName: 'dev-Api',
           }),
           expect.objectContaining({
-            stage: 'prod',
-            name: 'Data.Prepare',
-            stackName: 'prod-Data',
+            stage: 'dev',
+            name: 'Api.Deploy',
+            stackName: 'dev-Api',
           }),
         ])
       );
+
+      const prodStackNames = actions
+        .filter((action) => action.stage === 'prod')
+        .map((action) => action.stackName);
+      expect(prodStackNames).not.toContain('prod-Data');
+      expect(prodStackNames).not.toContain('prod-Api');
+    });
+
+    it('prod Prepare/Deploy actions target mmo-prod-Data and mmo-prod-Api', () => {
+      const stack = createTestStack();
+      const template = Template.fromStack(stack);
+      const pipelines = template.findResources('AWS::CodePipeline::Pipeline');
+      const prodActions: Array<{
+        name: string;
+        stackName: unknown;
+        changeSetName: unknown;
+        templatePath: unknown;
+      }> = [];
+
+      for (const resource of Object.values(pipelines) as Array<{
+        Properties?: { Stages?: Array<{ Name: string; Actions?: Array<any> }> };
+      }>) {
+        for (const stage of resource.Properties?.Stages ?? []) {
+          if (stage.Name !== 'prod') {
+            continue;
+          }
+          for (const action of stage.Actions ?? []) {
+            if (action.ActionTypeId?.Provider !== 'CloudFormation') {
+              continue;
+            }
+            prodActions.push({
+              name: action.Name,
+              stackName: action.Configuration?.StackName,
+              changeSetName: action.Configuration?.ChangeSetName,
+              templatePath: action.Configuration?.TemplatePath,
+            });
+          }
+        }
+      }
+
+      const pairs = [
+        { stackName: 'mmo-prod-Data' },
+        { stackName: 'mmo-prod-Api' },
+      ];
+
+      for (const pair of pairs) {
+        const prepareByStack = prodActions.find(
+          (action) =>
+            action.stackName === pair.stackName && /\.Prepare$/.test(action.name)
+        );
+        const deployByStack = prodActions.find(
+          (action) =>
+            action.stackName === pair.stackName && /\.Deploy$/.test(action.name)
+        );
+        expect(prepareByStack).toBeDefined();
+        expect(deployByStack).toBeDefined();
+        expect(prepareByStack?.stackName).toBe(pair.stackName);
+        expect(deployByStack?.stackName).toBe(pair.stackName);
+        expect(prepareByStack?.changeSetName).toBe('PipelineChange');
+        expect(deployByStack?.changeSetName).toBe('PipelineChange');
+        const templatePath = String(prepareByStack?.templatePath ?? '');
+        expect(templatePath.length).toBeGreaterThan(0);
+        expect(templatePath).toMatch(/assembly-.*-Prod\/.*\.template\.json$/);
+      }
+    });
+
+    it('dev Prepare/Deploy stack names stay exactly dev-Data and dev-Api', () => {
+      const stack = createTestStack();
+      const template = Template.fromStack(stack);
+      const pipelines = template.findResources('AWS::CodePipeline::Pipeline');
+      const devStackNames = new Set<string>();
+
+      for (const resource of Object.values(pipelines) as Array<{
+        Properties?: { Stages?: Array<{ Name: string; Actions?: Array<any> }> };
+      }>) {
+        for (const stage of resource.Properties?.Stages ?? []) {
+          if (stage.Name !== 'dev') {
+            continue;
+          }
+          for (const action of stage.Actions ?? []) {
+            if (action.ActionTypeId?.Provider !== 'CloudFormation') {
+              continue;
+            }
+            if (!/\.(Prepare|Deploy)$/.test(action.Name ?? '')) {
+              continue;
+            }
+            expect(typeof action.Configuration?.StackName).toBe('string');
+            devStackNames.add(action.Configuration.StackName);
+          }
+        }
+      }
+
+      expect([...devStackNames].sort()).toEqual(['dev-Api', 'dev-Data']);
     });
 
     it('synth fails loudly if required githubConnectionArn context is missing', () => {
