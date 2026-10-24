@@ -270,6 +270,15 @@ in the new version; old versions remain immutable. New entity ids are accepted â
 runtime validation only checks that `data` is an object (combat-constants) or a
 non-empty array (all other types). An empty `data` array returns **400**.
 
+Entity ids (`classId`, `skillId`, `statusId`, `elementId`, `resonanceId`, and
+references such as a class `resonance` or skill `element`) are open string ids
+matching `^[a-z][a-z0-9_]*$` â€” not a closed list of seed names. `secondaryResource`
+accepts any backend `ResourceId` (`resolve`, `focus`, `mana`, `charge`, `radiance`,
+`judgement`, `momentum`), not only `judgement`. Skill payloads may include
+`perStack.scalingPerStack`, `conditionals[].scaling`, `coefficients.targetVariants`,
+`stagger.targetVariants`, and extra PvP keys (`statusOverrides`, `missingHealthCap`,
+`exhaustedDurationSeconds`).
+
 **Path Parameters:**
 
 | Parameter | Type | Description |
@@ -427,7 +436,7 @@ from any origin (`*`), including the admin app origin.
 
 ## Request/Response Schemas
 
-For complete request and response schemas, including all catalog data structures, see the [OpenAPI specification](../contracts/openapi.yaml).
+For complete request and response schemas, including all catalog data structures, see the [OpenAPI specification](../contracts/openapi.yaml). Seed catalog documents are validated against those schemas in CI so payload drift fails the build (MMO-31).
 
 ---
 

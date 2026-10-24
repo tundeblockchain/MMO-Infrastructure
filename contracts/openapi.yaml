@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: MMO Character API
-  version: 0.3.0
+  version: 0.4.0
   description: |
     MMO backend API for character management, authentication, and game metadata catalogs.
     
@@ -35,6 +35,8 @@ info:
     The POST body is a full replacement. Added and removed entries (relative to the
     previous published version) are expressed by including or omitting them in `data`.
     Runtime validation does not reject new entity ids or shorter arrays.
+    OpenAPI identity fields are open string ids (not closed enums) so mmo-admin
+    can publish new class, skill, status, element, and resonance ids (MMO-31).
     
     **Multi-type publish:** When releasing coordinated changes across multiple catalog types,
     make separate POST requests for each type. There is no atomic multi-type publish —
@@ -1210,12 +1212,38 @@ components:
           description: Human-readable error message
 
     # =========================================================================
-    # Entity Schemas - MMO-10 / MMO-11
+    # Entity Schemas - MMO-10 / MMO-11 / MMO-31
     # Detailed schemas for each catalog entity type.
     # Admin (MMO-17) uses these to list and read entities by pinned version.
     # Admin (MMO-18) uses these to publish new catalog versions.
+    # MMO-31: identity fields are open string ids; skill/PvP shapes match seed
+    # and mmo-admin payloads (scalingPerStack, conditionals.scaling,
+    # targetVariants, extra PvP keys). secondaryResource uses ResourceId.
     # All percentages stored as decimals: 150% = 1.50, 15% = 0.15, 5% = 0.05
     # =========================================================================
+
+    CatalogEntityId:
+      type: string
+      minLength: 1
+      pattern: '^[a-z][a-z0-9_]*$'
+      description: |
+        Stable catalog entity identifier (class, skill, status, element, resonance).
+        Not a closed enum — mmo-admin may publish new ids.
+      example: vanguard
+
+    ResourceId:
+      type: string
+      description: |
+        Resource type used by classes and skills. Matches the backend ResourceId union.
+      enum:
+        - resolve
+        - focus
+        - mana
+        - charge
+        - radiance
+        - judgement
+        - momentum
+      example: resolve
 
     PrimaryStats:
       type: object
@@ -1308,10 +1336,8 @@ components:
         - roles
       properties:
         classId:
-          type: string
-          enum: [vanguard, ranger, arcanist, machinist, warden, shade]
+          $ref: '#/components/schemas/CatalogEntityId'
           description: Unique class identifier
-          example: vanguard
         displayName:
           type: string
           description: Display name for the class
@@ -1321,22 +1347,15 @@ components:
           description: Class description
           example: A stalwart frontline defender who protects allies and controls the battlefield.
         primaryResource:
-          type: string
-          enum: [resolve, focus, mana, charge, radiance, momentum]
-          description: Primary resource used by this class
-          example: resolve
+          $ref: '#/components/schemas/ResourceId'
         secondaryResource:
-          type: string
-          enum: [judgement]
-          description: Secondary resource (if any, e.g., judgement for Warden)
-          example: judgement
+          $ref: '#/components/schemas/ResourceId'
+          description: Secondary resource (if any). Same ResourceId union as the backend, not judgement-only.
         startingStats:
           $ref: '#/components/schemas/ClassStartingStats'
         resonance:
-          type: string
-          enum: [valor, precision, arcana, innovation, sanctuary, subterfuge]
+          $ref: '#/components/schemas/CatalogEntityId'
           description: Associated resonance type
-          example: valor
         roles:
           type: array
           items:
@@ -1450,6 +1469,12 @@ components:
             value:
               type: number
               example: 35
+        targetVariants:
+          type: object
+          additionalProperties:
+            type: number
+          description: Per-target variant stagger values (e.g., turret/drone/mine for Remote Detonation)
+          example: { turret: 25, drone: 35, mine: 65 }
 
     PvPMultipliers:
       type: object
@@ -1484,7 +1509,7 @@ components:
           type: object
           properties:
             resourceId:
-              type: string
+              $ref: '#/components/schemas/ResourceId'
             amount:
               type: number
           example: { resourceId: resolve, amount: 12 }
@@ -1501,6 +1526,20 @@ components:
             type: number
           description: Effect value overrides
           example: { blockReduction: 0.50, critBonus: 0.10 }
+        statusOverrides:
+          type: object
+          additionalProperties:
+            type: number
+          description: Additional status/debuff changes in PvP
+          example: { weaken: -0.10 }
+        missingHealthCap:
+          type: number
+          description: Missing health cap for execute-type skills in PvP
+          example: 1.00
+        exhaustedDurationSeconds:
+          type: number
+          description: Exhausted debuff duration in PvP
+          example: 120
 
     ResourceEffect:
       type: object
@@ -1511,9 +1550,7 @@ components:
         - isPercentOfMax
       properties:
         resourceId:
-          type: string
-          description: Resource type affected
-          example: resolve
+          $ref: '#/components/schemas/ResourceId'
         amount:
           type: number
           description: Amount (positive = generate, negative = consume)
@@ -1544,10 +1581,8 @@ components:
             $ref: '#/components/schemas/ScalingVector'
           description: Scaling vectors for damage calculation
         element:
-          type: string
-          enum: [physical, fire, ice, lightning, arcane, nature, shadow, radiant]
+          $ref: '#/components/schemas/CatalogEntityId'
           description: Element type for damage skills
-          example: physical
         appliesStatus:
           type: string
           description: Status effect applied on hit
@@ -1557,31 +1592,70 @@ components:
           description: Duration of applied effect in seconds
           example: 6
         perStack:
-          type: object
-          description: Per-stack coefficient progression (e.g., Sever momentum stacks)
-          properties:
-            basePowerPerStack:
-              type: array
-              items:
-                type: number
-              description: Per-stack base power values (index 0 = 1 stack)
-              example: [1.50, 2.00, 2.60, 3.30, 4.20]
+          $ref: '#/components/schemas/PerStackCoefficients'
         conditionals:
           type: array
           items:
-            type: object
-            properties:
-              condition:
-                type: string
-                enum: [marked, below_hp_threshold, above_hp_threshold, perfect_timing, flanking, stealthed, boss_target]
-              threshold:
-                type: number
-                description: Threshold value for HP conditions (as decimal)
-              basePower:
-                type: number
-              damageMultiplier:
-                type: number
+            $ref: '#/components/schemas/ConditionalCoefficient'
           description: Conditional coefficient modifiers
+        targetVariants:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/TargetVariantCoefficients'
+          description: Multi-target coefficients (e.g., Remote Detonation turret/drone/mine)
+
+    PerStackCoefficients:
+      type: object
+      description: Per-stack coefficient progression (e.g., Sever momentum stacks)
+      required:
+        - basePowerPerStack
+      properties:
+        basePowerPerStack:
+          type: array
+          items:
+            type: number
+          description: Per-stack base power values (index 0 = 1 stack)
+          example: [1.50, 2.00, 2.60, 3.30, 4.20]
+        scalingPerStack:
+          type: array
+          items:
+            type: array
+            items:
+              $ref: '#/components/schemas/ScalingVector'
+          description: Per-stack scaling vectors (index 0 = 1 stack)
+
+    ConditionalCoefficient:
+      type: object
+      description: Conditional coefficient modifiers (e.g., marked target, below HP threshold)
+      properties:
+        condition:
+          type: string
+          enum: [marked, below_hp_threshold, above_hp_threshold, perfect_timing, flanking, stealthed, boss_target]
+        threshold:
+          type: number
+          description: Threshold value for HP conditions (as decimal)
+        basePower:
+          type: number
+        damageMultiplier:
+          type: number
+        scaling:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScalingVector'
+          description: Modified scaling when condition is met
+
+    TargetVariantCoefficients:
+      type: object
+      description: Per-target variant coefficients (e.g., turret vs drone vs mine)
+      required:
+        - basePower
+      properties:
+        basePower:
+          type: number
+        scaling:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScalingVector'
 
     SkillDefinition:
       type: object
@@ -1605,14 +1679,11 @@ components:
         - iconPath
       properties:
         skillId:
-          type: string
+          $ref: '#/components/schemas/CatalogEntityId'
           description: Stable skill identifier
-          example: vanguard_cleaving_strike
         classId:
-          type: string
-          enum: [vanguard, ranger, arcanist, machinist, warden, shade]
+          $ref: '#/components/schemas/CatalogEntityId'
           description: Class this skill belongs to
-          example: vanguard
         displayName:
           type: string
           example: Cleaving Strike
@@ -1625,10 +1696,10 @@ components:
           description: Activation type
           example: active
         resourceId:
-          type: string
           nullable: true
+          allOf:
+            - $ref: '#/components/schemas/ResourceId'
           description: Resource consumed (null for no cost)
-          example: null
         resourceCost:
           type: number
           description: Resource cost amount
@@ -1695,9 +1766,8 @@ components:
         - iconPath
       properties:
         statusId:
-          type: string
+          $ref: '#/components/schemas/CatalogEntityId'
           description: Unique status identifier
-          example: flame
         displayName:
           type: string
           example: Flame
@@ -1734,10 +1804,8 @@ components:
         - weakAgainst
       properties:
         elementId:
-          type: string
-          enum: [physical, fire, ice, lightning, arcane, nature, shadow, radiant]
+          $ref: '#/components/schemas/CatalogEntityId'
           description: Element identifier
-          example: fire
         displayName:
           type: string
           example: Fire
@@ -1768,10 +1836,8 @@ components:
         - partyBonus
       properties:
         resonanceId:
-          type: string
-          enum: [valor, precision, arcana, innovation, sanctuary, subterfuge]
+          $ref: '#/components/schemas/CatalogEntityId'
           description: Resonance identifier
-          example: valor
         displayName:
           type: string
           example: Valor
