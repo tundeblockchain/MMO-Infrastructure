@@ -1,8 +1,10 @@
 /**
- * Users Me Lambda Tests - MMO-27
+ * Users Me Lambda Tests - MMO-32
  *
  * POST /users/me upserts the Firebase uid into the users table.
- * AUTO_ADMIN_ON_LOGIN auto-promotes only when the value is exactly 'true'.
+ * Admin promotion requires email_verified === true AND a normalized
+ * email on ADMIN_EMAIL_ALLOWLIST. Missing/empty allowlist fails closed.
+ * Existing admins are never demoted. AUTO_ADMIN_ON_LOGIN is ignored.
  */
 
 import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
@@ -28,8 +30,9 @@ const mockVerifyFirebaseIdToken = verifyFirebaseIdToken as jest.MockedFunction<
 const VALID_TOKEN = 'Bearer valid-firebase-token';
 const VALID_ACCOUNT_ID = 'firebase-user-123';
 const USERS_TABLE_NAME = 'test-users';
+const LISTED_EMAIL = 'admin@example.com';
 
-function decodedToken() {
+function decodedToken(overrides?: { email?: string; email_verified?: boolean }) {
   return {
     uid: VALID_ACCOUNT_ID,
     aud: 'test-project',
@@ -38,6 +41,8 @@ function decodedToken() {
     iat: 1704067200,
     iss: 'https://securetoken.google.com/test-project',
     sub: VALID_ACCOUNT_ID,
+    email: overrides?.email ?? LISTED_EMAIL,
+    email_verified: overrides?.email_verified ?? true,
     firebase: {
       identities: {},
       sign_in_provider: 'password',
@@ -80,7 +85,7 @@ function createMockEvent(
   };
 }
 
-describe('POST /users/me (MMO-27)', () => {
+describe('POST /users/me (MMO-32)', () => {
   beforeAll(() => {
     process.env.USERS_TABLE_NAME = USERS_TABLE_NAME;
   });
@@ -88,11 +93,8 @@ describe('POST /users/me (MMO-27)', () => {
   beforeEach(() => {
     ddbMock.reset();
     jest.clearAllMocks();
-    process.env.AUTO_ADMIN_ON_LOGIN = 'true';
-  });
-
-  afterEach(() => {
-    process.env.AUTO_ADMIN_ON_LOGIN = 'true';
+    delete process.env.AUTO_ADMIN_ON_LOGIN;
+    delete process.env.ADMIN_EMAIL_ALLOWLIST;
   });
 
   function expectPlayerUpsert(response: { statusCode: number; body: string }) {
@@ -106,6 +108,20 @@ describe('POST /users/me (MMO-27)', () => {
     expect(puts[0].args[0].input).toEqual({
       TableName: USERS_TABLE_NAME,
       Item: { uid: VALID_ACCOUNT_ID, accountType: 'player' },
+    });
+  }
+
+  function expectAdminUpsert(response: { statusCode: number; body: string }) {
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body)).toEqual({
+      uid: VALID_ACCOUNT_ID,
+      accountType: 'admin',
+    });
+    const puts = ddbMock.commandCalls(PutCommand);
+    expect(puts).toHaveLength(1);
+    expect(puts[0].args[0].input).toEqual({
+      TableName: USERS_TABLE_NAME,
+      Item: { uid: VALID_ACCOUNT_ID, accountType: 'admin' },
     });
   }
 
@@ -133,8 +149,12 @@ describe('POST /users/me (MMO-27)', () => {
     expect(ddbMock.commandCalls(PutCommand)).toHaveLength(0);
   });
 
-  it('should upsert accountType admin when AUTO_ADMIN_ON_LOGIN is true', async () => {
-    mockVerifyFirebaseIdToken.mockResolvedValueOnce(decodedToken());
+  it('should not promote an unverified email even when it is on the allowlist', async () => {
+    process.env.ADMIN_EMAIL_ALLOWLIST = LISTED_EMAIL;
+    mockVerifyFirebaseIdToken.mockResolvedValueOnce(
+      decodedToken({ email: LISTED_EMAIL, email_verified: false })
+    );
+    ddbMock.on(GetCommand).resolves({});
     ddbMock.on(PutCommand).resolves({});
 
     const result = await handler(
@@ -142,24 +162,42 @@ describe('POST /users/me (MMO-27)', () => {
       {} as never,
       {} as never
     );
-    const response = result as { statusCode: number; body: string };
-
-    expect(response.statusCode).toBe(200);
-    expect(JSON.parse(response.body)).toEqual({
-      uid: VALID_ACCOUNT_ID,
-      accountType: 'admin',
-    });
-
-    const puts = ddbMock.commandCalls(PutCommand);
-    expect(puts).toHaveLength(1);
-    expect(puts[0].args[0].input).toEqual({
-      TableName: USERS_TABLE_NAME,
-      Item: { uid: VALID_ACCOUNT_ID, accountType: 'admin' },
-    });
+    expectPlayerUpsert(result as { statusCode: number; body: string });
   });
 
-  it('should upsert accountType player when AUTO_ADMIN_ON_LOGIN is false', async () => {
-    process.env.AUTO_ADMIN_ON_LOGIN = 'false';
+  it('should not promote a verified email that is not on the allowlist', async () => {
+    process.env.ADMIN_EMAIL_ALLOWLIST = LISTED_EMAIL;
+    mockVerifyFirebaseIdToken.mockResolvedValueOnce(
+      decodedToken({ email: 'player@example.com', email_verified: true })
+    );
+    ddbMock.on(GetCommand).resolves({});
+    ddbMock.on(PutCommand).resolves({});
+
+    const result = await handler(
+      createMockEvent('POST', '/users/me', { authorization: VALID_TOKEN }),
+      {} as never,
+      {} as never
+    );
+    expectPlayerUpsert(result as { statusCode: number; body: string });
+  });
+
+  it('should promote when case and whitespace differ from the allowlist entry', async () => {
+    process.env.ADMIN_EMAIL_ALLOWLIST = '  Admin@Example.com  , other@example.com ';
+    mockVerifyFirebaseIdToken.mockResolvedValueOnce(
+      decodedToken({ email: ' admin@example.com ', email_verified: true })
+    );
+    ddbMock.on(PutCommand).resolves({});
+
+    const result = await handler(
+      createMockEvent('POST', '/users/me', { authorization: VALID_TOKEN }),
+      {} as never,
+      {} as never
+    );
+    expectAdminUpsert(result as { statusCode: number; body: string });
+  });
+
+  it('should promote nobody when the allowlist is empty', async () => {
+    process.env.ADMIN_EMAIL_ALLOWLIST = '   ,  ';
     mockVerifyFirebaseIdToken.mockResolvedValueOnce(decodedToken());
     ddbMock.on(GetCommand).resolves({});
     ddbMock.on(PutCommand).resolves({});
@@ -172,8 +210,8 @@ describe('POST /users/me (MMO-27)', () => {
     expectPlayerUpsert(result as { statusCode: number; body: string });
   });
 
-  it('should upsert player and never promote when AUTO_ADMIN_ON_LOGIN is unset', async () => {
-    delete process.env.AUTO_ADMIN_ON_LOGIN;
+  it('should promote nobody when the allowlist is missing', async () => {
+    delete process.env.ADMIN_EMAIL_ALLOWLIST;
     mockVerifyFirebaseIdToken.mockResolvedValueOnce(decodedToken());
     ddbMock.on(GetCommand).resolves({});
     ddbMock.on(PutCommand).resolves({});
@@ -186,9 +224,26 @@ describe('POST /users/me (MMO-27)', () => {
     expectPlayerUpsert(result as { statusCode: number; body: string });
   });
 
-  it('should not downgrade an existing admin when AUTO_ADMIN_ON_LOGIN is false', async () => {
-    process.env.AUTO_ADMIN_ON_LOGIN = 'false';
-    mockVerifyFirebaseIdToken.mockResolvedValueOnce(decodedToken());
+  it('should promote a listed verified email to admin', async () => {
+    process.env.ADMIN_EMAIL_ALLOWLIST = LISTED_EMAIL;
+    mockVerifyFirebaseIdToken.mockResolvedValueOnce(
+      decodedToken({ email: LISTED_EMAIL, email_verified: true })
+    );
+    ddbMock.on(PutCommand).resolves({});
+
+    const result = await handler(
+      createMockEvent('POST', '/users/me', { authorization: VALID_TOKEN }),
+      {} as never,
+      {} as never
+    );
+    expectAdminUpsert(result as { statusCode: number; body: string });
+  });
+
+  it('should not demote an existing admin when the caller is not allowlisted', async () => {
+    process.env.ADMIN_EMAIL_ALLOWLIST = LISTED_EMAIL;
+    mockVerifyFirebaseIdToken.mockResolvedValueOnce(
+      decodedToken({ email: 'player@example.com', email_verified: false })
+    );
     ddbMock.on(GetCommand).resolves({
       Item: { uid: VALID_ACCOUNT_ID, accountType: 'admin' },
     });
@@ -206,5 +261,20 @@ describe('POST /users/me (MMO-27)', () => {
       accountType: 'admin',
     });
     expect(ddbMock.commandCalls(PutCommand)).toHaveLength(0);
+  });
+
+  it('should ignore AUTO_ADMIN_ON_LOGIN=true and fail closed without an allowlist', async () => {
+    process.env.AUTO_ADMIN_ON_LOGIN = 'true';
+    delete process.env.ADMIN_EMAIL_ALLOWLIST;
+    mockVerifyFirebaseIdToken.mockResolvedValueOnce(decodedToken());
+    ddbMock.on(GetCommand).resolves({});
+    ddbMock.on(PutCommand).resolves({});
+
+    const result = await handler(
+      createMockEvent('POST', '/users/me', { authorization: VALID_TOKEN }),
+      {} as never,
+      {} as never
+    );
+    expectPlayerUpsert(result as { statusCode: number; body: string });
   });
 });

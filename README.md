@@ -96,18 +96,60 @@ or invalid/expired tokens return **401**. A valid token whose account is not adm
 `POST /users/me` with `Authorization: Bearer <Firebase ID token>`. That upserts
 the caller's `uid` into the users table and returns `{ "uid", "accountType" }`.
 
-`AUTO_ADMIN_ON_LOGIN` is a per-stage flag (dev and prod are both `true` for now).
-When it is exactly `true`, `POST /users/me` writes `accountType: admin`. A missing
-or any other value is treated as off: the endpoint upserts `player` and never
-downgrades an existing admin. Switching the flag off does **not** demote existing
-admins; demote a row by hand:
+`POST /users/me` writes `accountType: admin` only when the verified Firebase token
+has `email_verified === true` **and** the email (lowercased + trimmed) is on that
+stage's allowlist. Everyone else is upserted as `player`. A missing or empty
+allowlist fails closed (nobody is promoted). Existing admins are **never**
+demoted automatically.
+
+### Admin email allowlist (per stage)
+
+Supply a comma-separated list via CDK context or environment variables. Do not
+commit real addresses; use local context / env at deploy time. Placeholders
+below use `example.com`.
+
+| Stage | CDK context | Environment variable |
+|-------|-------------|----------------------|
+| dev | `adminEmailAllowlistDev` | `ADMIN_EMAIL_ALLOWLIST_DEV` |
+| prod | `adminEmailAllowlistProd` | `ADMIN_EMAIL_ALLOWLIST_PROD` |
+| both (fallback) | `adminEmailAllowlist` | `ADMIN_EMAIL_ALLOWLIST` |
+
+Add or remove emails, then **redeploy** so the users-me Lambda env updates
+(pipeline self-mutate after `PipelineStack` is redeployed with the new context,
+or a full `cdk deploy PipelineStack` with the same `-c` flags as first deploy):
+
+```powershell
+npm run deploy:pipeline `
+  -c githubConnectionArn=arn:aws:codestar-connections:REGION:ACCOUNT:connection/UUID `
+  -c githubOwner=YOUR_GITHUB_USER_OR_ORG `
+  -c githubRepo=MMO-Infrastructure `
+  -c githubBranch=main `
+  -c adminEmailAllowlistDev=admin@example.com,editor@example.com `
+  -c adminEmailAllowlistProd=admin@example.com
+```
+
+Equivalent env vars before synth/deploy:
+
+```powershell
+$env:ADMIN_EMAIL_ALLOWLIST_DEV = "admin@example.com,editor@example.com"
+$env:ADMIN_EMAIL_ALLOWLIST_PROD = "admin@example.com"
+```
+
+The users-me Lambda reads `ADMIN_EMAIL_ALLOWLIST` (already normalized per stage
+by CDK). Context wins over env when both are set.
+
+### Demote accounts promoted while blanket auto-admin was on
+
+Earlier deploys set every caller to `admin` on login. That flag is off. Demote a
+row by hand with placeholder values only:
 
 ```
+aws dynamodb put-item --table-name mmo-dev-users --item '{"uid":{"S":"<FIREBASE_UID>"},"accountType":{"S":"player"}}' --region <REGION>
 aws dynamodb put-item --table-name mmo-prod-users --item '{"uid":{"S":"<FIREBASE_UID>"},"accountType":{"S":"player"}}' --region <REGION>
 ```
 
-Promote by hand (same command with `"admin"`) if a stage's flag is off. Use table
-`mmo-dev-users` for the dev stage.
+Promote by hand (same command with `"admin"`) only if you must grant admin
+without going through the allowlist.
 
 ### Unity / ZoneServer config (dev)
 
@@ -131,7 +173,7 @@ After the Dev stage deploys, note CloudFormation outputs:
 | GET | `/catalog/versions/latest` | None | Get latest published version per catalog type |
 | GET | `/catalog/versions` | None | List all published catalog versions |
 | GET | `/catalog/{type}/v/{ver}` | None | Get catalog data by type and version |
-| POST | `/users/me` | Firebase ID token | Upsert caller into users table (`admin` while `AUTO_ADMIN_ON_LOGIN=true`) |
+| POST | `/users/me` | Firebase ID token | Upsert caller; `admin` only if verified email is on the stage allowlist |
 | POST | `/catalog/{type}/versions` | Firebase ID token + users-table admin | Publish new catalog version |
 
 ## Documentation

@@ -16,6 +16,8 @@ export interface ApiStackProps extends cdk.StackProps {
   readonly firebaseSecret: secretsmanager.ISecret;
   readonly gameJwtSecret: secretsmanager.ISecret;
   readonly internalSaveApiSecret: secretsmanager.ISecret;
+  /** Comma-separated verified emails that POST /users/me may promote. Empty = nobody. */
+  readonly adminEmailAllowlist?: string;
 }
 
 export class ApiStack extends cdk.Stack {
@@ -100,18 +102,14 @@ export class ApiStack extends cdk.Stack {
     const usersMeFn = createLambda('UsersMeFn', {
       functionName: `${prefix}-users-me`,
       entry: path.join(lambdasDir, 'users-me', 'handler.ts'),
-      description: 'Upsert the signed-in Firebase user into the users table (MMO-27)',
+      description:
+        'Upsert the signed-in Firebase user; promote to admin only if email is verified and allowlisted (MMO-32)',
     });
     usersMeFn.addEnvironment('USERS_TABLE_NAME', props.usersTable.tableName);
-    // Per-stage flag. Both stages are 'true' for now; set a stage to 'false'
-    // later to stop auto-promote. Missing/non-'true' in the handler is false.
-    const autoAdminOnLoginByStage: Record<string, 'true' | 'false'> = {
-      dev: 'true',
-      prod: 'true',
-    };
+    // Per-stage allowlist from CDK context / props / env. Empty fails closed.
     usersMeFn.addEnvironment(
-      'AUTO_ADMIN_ON_LOGIN',
-      autoAdminOnLoginByStage[props.stageName] ?? 'false'
+      'ADMIN_EMAIL_ALLOWLIST',
+      props.adminEmailAllowlist ?? ''
     );
     props.usersTable.grantReadWriteData(usersMeFn);
     props.firebaseSecret.grantRead(usersMeFn);

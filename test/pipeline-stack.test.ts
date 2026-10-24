@@ -219,6 +219,62 @@ describe('PipelineStack', () => {
       });
     });
 
+    it('resolves empty admin email allowlists when context and env are missing', () => {
+      const previousDev = process.env.ADMIN_EMAIL_ALLOWLIST_DEV;
+      const previousProd = process.env.ADMIN_EMAIL_ALLOWLIST_PROD;
+      const previousShared = process.env.ADMIN_EMAIL_ALLOWLIST;
+      delete process.env.ADMIN_EMAIL_ALLOWLIST_DEV;
+      delete process.env.ADMIN_EMAIL_ALLOWLIST_PROD;
+      delete process.env.ADMIN_EMAIL_ALLOWLIST;
+      try {
+        const app = new cdk.App({ context: requiredContext });
+        const ctx = resolvePipelineContext(app);
+        expect(ctx.adminEmailAllowlistDev).toBe('');
+        expect(ctx.adminEmailAllowlistProd).toBe('');
+      } finally {
+        if (previousDev === undefined) {
+          delete process.env.ADMIN_EMAIL_ALLOWLIST_DEV;
+        } else {
+          process.env.ADMIN_EMAIL_ALLOWLIST_DEV = previousDev;
+        }
+        if (previousProd === undefined) {
+          delete process.env.ADMIN_EMAIL_ALLOWLIST_PROD;
+        } else {
+          process.env.ADMIN_EMAIL_ALLOWLIST_PROD = previousProd;
+        }
+        if (previousShared === undefined) {
+          delete process.env.ADMIN_EMAIL_ALLOWLIST;
+        } else {
+          process.env.ADMIN_EMAIL_ALLOWLIST = previousShared;
+        }
+      }
+    });
+
+    it('uses per-stage admin email allowlist context keys', () => {
+      const app = new cdk.App({
+        context: {
+          ...requiredContext,
+          adminEmailAllowlistDev: ' dev-admin@example.com ',
+          adminEmailAllowlistProd: 'prod-admin@example.com',
+        },
+      });
+      const ctx = resolvePipelineContext(app);
+      expect(ctx.adminEmailAllowlistDev).toBe('dev-admin@example.com');
+      expect(ctx.adminEmailAllowlistProd).toBe('prod-admin@example.com');
+    });
+
+    it('falls back to shared adminEmailAllowlist context for both stages', () => {
+      const app = new cdk.App({
+        context: {
+          ...requiredContext,
+          adminEmailAllowlist: 'shared-admin@example.com',
+        },
+      });
+      const ctx = resolvePipelineContext(app);
+      expect(ctx.adminEmailAllowlistDev).toBe('shared-admin@example.com');
+      expect(ctx.adminEmailAllowlistProd).toBe('shared-admin@example.com');
+    });
+
     it('uses the githubBranch context override when provided', () => {
       withUnsetGithubBranch(() => {
         const app = new cdk.App({
@@ -240,6 +296,31 @@ describe('PipelineStack', () => {
 
       template.hasResourceProperties('AWS::CodeBuild::Project', {
         Description: Match.stringLikeRegexp('SelfMutate'),
+      });
+    });
+
+    it('forwards per-stage admin email allowlists to synth as env vars', () => {
+      const stack = createTestStack({
+        adminEmailAllowlistDev: 'dev-admin@example.com',
+        adminEmailAllowlistProd: 'prod-admin@example.com',
+      });
+      const template = Template.fromStack(stack);
+
+      template.hasResourceProperties('AWS::CodeBuild::Project', {
+        Environment: Match.objectLike({
+          EnvironmentVariables: Match.arrayWith([
+            Match.objectLike({
+              Name: 'ADMIN_EMAIL_ALLOWLIST_DEV',
+              Type: 'PLAINTEXT',
+              Value: 'dev-admin@example.com',
+            }),
+            Match.objectLike({
+              Name: 'ADMIN_EMAIL_ALLOWLIST_PROD',
+              Type: 'PLAINTEXT',
+              Value: 'prod-admin@example.com',
+            }),
+          ]),
+        }),
       });
     });
 

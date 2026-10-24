@@ -13,6 +13,8 @@ new PipelineStack(app, 'PipelineStack', {
   githubOwner: ctx.githubOwner,
   githubRepo: ctx.githubRepo,
   githubBranch: ctx.githubBranch,
+  adminEmailAllowlistDev: ctx.adminEmailAllowlistDev,
+  adminEmailAllowlistProd: ctx.adminEmailAllowlistProd,
 });
 
 app.synth();

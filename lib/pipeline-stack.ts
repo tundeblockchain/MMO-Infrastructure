@@ -10,6 +10,10 @@ export interface PipelineStackProps extends cdk.StackProps {
   readonly githubOwner: string;
   readonly githubRepo: string;
   readonly githubBranch: string;
+  /** Comma-separated verified emails that POST /users/me may promote on dev. */
+  readonly adminEmailAllowlistDev?: string;
+  /** Comma-separated verified emails that POST /users/me may promote on prod. */
+  readonly adminEmailAllowlistProd?: string;
 }
 
 export class PipelineStack extends cdk.Stack {
@@ -57,6 +61,8 @@ export class PipelineStack extends cdk.Stack {
         GITHUB_CONNECTION_ARN: props.githubConnectionArn,
         CDK_DEFAULT_ACCOUNT: account,
         CDK_DEFAULT_REGION: region,
+        ADMIN_EMAIL_ALLOWLIST_DEV: props.adminEmailAllowlistDev ?? '',
+        ADMIN_EMAIL_ALLOWLIST_PROD: props.adminEmailAllowlistProd ?? '',
       },
       commands: [
         'node --version',
@@ -94,6 +100,7 @@ export class PipelineStack extends cdk.Stack {
     const devStage = new MmoStage(this, 'Dev', {
       env: props.env,
       stageName: 'dev',
+      adminEmailAllowlist: props.adminEmailAllowlistDev ?? '',
     });
 
     pipeline.addStage(devStage);
@@ -101,6 +108,7 @@ export class PipelineStack extends cdk.Stack {
     const prodStage = new MmoStage(this, 'Prod', {
       env: props.env,
       stageName: 'prod',
+      adminEmailAllowlist: props.adminEmailAllowlistProd ?? '',
     });
 
     pipeline.addStage(prodStage, {
