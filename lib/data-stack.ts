@@ -19,7 +19,8 @@ export class DataStack extends cdk.Stack {
     const prefix = `mmo-${props.stageName}`;
 
     this.table = new dynamodb.Table(this, 'GameTable', {
-      tableName: `${prefix}-game`,
+      // -v2 sidesteps retained leftovers mmo-dev-game / mmo-prod-game (do not delete those).
+      tableName: `${prefix}-game-v2`,
       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,

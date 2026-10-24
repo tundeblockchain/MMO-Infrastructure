@@ -86,8 +86,8 @@ describe('MMO-23: stage-scoped physical names', () => {
       'mmo-dev-characters',
       'mmo-dev-characters-save',
       'mmo-dev-firebase-service-account',
-      'mmo-dev-game',
       'mmo-dev-game-session-jwt',
+      'mmo-dev-game-v2',
       'mmo-dev-internal-save-api-key',
     ]);
 
@@ -99,8 +99,8 @@ describe('MMO-23: stage-scoped physical names', () => {
       'mmo-prod-characters',
       'mmo-prod-characters-save',
       'mmo-prod-firebase-service-account',
-      'mmo-prod-game',
       'mmo-prod-game-session-jwt',
+      'mmo-prod-game-v2',
       'mmo-prod-internal-save-api-key',
     ]);
 
@@ -129,5 +129,43 @@ describe('MMO-23: stage-scoped physical names', () => {
 
     const collisions = devNames.filter((name) => prodNames.includes(name));
     expect(collisions).toEqual([]);
+  });
+
+  it('uses -v2 table names so retained mmo-*-game leftovers are not reused', () => {
+    const { dev, prod } = createStages();
+    const devData = Template.fromStack(dev.dataStack);
+    const prodData = Template.fromStack(prod.dataStack);
+    const devApi = Template.fromStack(dev.apiStack);
+    const prodApi = Template.fromStack(prod.apiStack);
+
+    devData.hasResourceProperties('AWS::DynamoDB::Table', {
+      TableName: 'mmo-dev-game-v2',
+    });
+    prodData.hasResourceProperties('AWS::DynamoDB::Table', {
+      TableName: 'mmo-prod-game-v2',
+    });
+
+    const allTableNames = [
+      ...Object.values(devData.findResources('AWS::DynamoDB::Table')),
+      ...Object.values(prodData.findResources('AWS::DynamoDB::Table')),
+    ].map((resource) => (resource as { Properties?: { TableName?: string } }).Properties?.TableName);
+
+    expect(allTableNames).not.toContain('mmo-dev-game');
+    expect(allTableNames).not.toContain('mmo-prod-game');
+
+    const assertLambdaTableEnv = (template: Template, tableName: string) => {
+      const functions = template.findResources('AWS::Lambda::Function');
+      const tableEnvs = Object.values(functions).map((resource) => {
+        const vars = (resource as {
+          Properties?: { Environment?: { Variables?: { TABLE_NAME?: string } } };
+        }).Properties?.Environment?.Variables;
+        return vars?.TABLE_NAME;
+      });
+      expect(tableEnvs.length).toBeGreaterThan(0);
+      expect(new Set(tableEnvs)).toEqual(new Set([tableName]));
+    };
+
+    assertLambdaTableEnv(devApi, 'mmo-dev-game-v2');
+    assertLambdaTableEnv(prodApi, 'mmo-prod-game-v2');
   });
 });
