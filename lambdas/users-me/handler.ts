@@ -1,5 +1,5 @@
 /**
- * Users Me Lambda Handler - MMO-27
+ * Users Me Lambda Handler - MMO-32
  *
  * Authenticated upsert of the signed-in Firebase user into the users table.
  *
@@ -7,13 +7,14 @@
  * - 401: missing Bearer token or verifyIdToken failed
  * - 200: { uid, accountType }
  *
- * AUTO_ADMIN_ON_LOGIN (per-stage; only exact 'true' auto-promotes):
- * - 'true'  → upsert accountType 'admin'
- * - missing or any other value → upsert accountType 'player',
- *   but never downgrade an existing admin
+ * Promotion (fail closed):
+ * - accountType admin only when the verified token has email_verified === true
+ *   AND the email (lowercased + trimmed) is on ADMIN_EMAIL_ALLOWLIST
+ * - missing, empty, or non-matching allowlist → upsert player
+ * - never downgrade an existing admin
  *
- * Switching the flag off does not demote existing admins; change a row to
- * player by hand with put-item. The table remains the only publish gate.
+ * Blanket AUTO_ADMIN_ON_LOGIN is ignored. Demote a leftover admin row by hand
+ * with put-item accountType player. The table remains the only publish gate.
  */
 
 import { APIGatewayProxyHandlerV2 } from 'aws-lambda';
@@ -41,12 +42,43 @@ export interface UsersMeResponse {
   accountType: AccountType;
 }
 
-/**
- * Auto-admin only when the env var is exactly 'true'.
- * Missing, empty, or any other value is treated as false (never auto-promote).
- */
-function isAutoAdminOnLogin(): boolean {
-  return process.env.AUTO_ADMIN_ON_LOGIN === 'true';
+interface VerifiedCaller {
+  uid: string;
+  email?: string;
+  emailVerified: boolean;
+}
+
+/** Lowercase + trim each comma-separated entry. Empty / missing → nobody. */
+export function parseAdminEmailAllowlist(raw: string | undefined): string[] {
+  if (!raw) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const emails: string[] = [];
+  for (const part of raw.split(',')) {
+    const email = part.trim().toLowerCase();
+    if (email.length > 0 && !seen.has(email)) {
+      seen.add(email);
+      emails.push(email);
+    }
+  }
+  return emails;
+}
+
+export function normalizeEmail(email: string | undefined): string {
+  return (email ?? '').trim().toLowerCase();
+}
+
+function isAllowlistedVerifiedEmail(caller: VerifiedCaller): boolean {
+  if (caller.emailVerified !== true) {
+    return false;
+  }
+  const email = normalizeEmail(caller.email);
+  if (!email) {
+    return false;
+  }
+  return parseAdminEmailAllowlist(process.env.ADMIN_EMAIL_ALLOWLIST).includes(email);
 }
 
 function readAuthorizationHeader(
@@ -58,7 +90,9 @@ function readAuthorizationHeader(
   return headers.authorization ?? headers.Authorization;
 }
 
-async function verifyUid(authorizationHeader?: string): Promise<string | null> {
+async function verifyCaller(
+  authorizationHeader?: string
+): Promise<VerifiedCaller | null> {
   const token = getBearerToken(authorizationHeader);
   if (!token) {
     return null;
@@ -66,7 +100,14 @@ async function verifyUid(authorizationHeader?: string): Promise<string | null> {
 
   try {
     const decoded = await verifyFirebaseIdToken(token);
-    return decoded.uid;
+    if (!decoded.uid) {
+      return null;
+    }
+    return {
+      uid: decoded.uid,
+      email: decoded.email,
+      emailVerified: decoded.email_verified === true,
+    };
   } catch {
     return null;
   }
@@ -99,23 +140,23 @@ async function putAccountType(
   );
 }
 
-async function upsertCaller(uid: string): Promise<AccountType> {
+async function upsertCaller(caller: VerifiedCaller): Promise<AccountType> {
   const usersTableName = process.env.USERS_TABLE_NAME;
   if (!usersTableName) {
     throw new Error('USERS_TABLE_NAME is not configured');
   }
 
-  if (isAutoAdminOnLogin()) {
-    await putAccountType(usersTableName, uid, 'admin');
+  if (isAllowlistedVerifiedEmail(caller)) {
+    await putAccountType(usersTableName, caller.uid, 'admin');
     return 'admin';
   }
 
-  const existing = await lookupAccountType(usersTableName, uid);
+  const existing = await lookupAccountType(usersTableName, caller.uid);
   if (existing === 'admin') {
     return 'admin';
   }
 
-  await putAccountType(usersTableName, uid, 'player');
+  await putAccountType(usersTableName, caller.uid, 'player');
   return 'player';
 }
 
@@ -128,13 +169,13 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       return notFound('Route not found');
     }
 
-    const uid = await verifyUid(readAuthorizationHeader(event.headers));
-    if (!uid) {
+    const caller = await verifyCaller(readAuthorizationHeader(event.headers));
+    if (!caller) {
       return unauthorized('Valid Firebase ID token required');
     }
 
-    const accountType = await upsertCaller(uid);
-    return json(200, { uid, accountType } satisfies UsersMeResponse);
+    const accountType = await upsertCaller(caller);
+    return json(200, { uid: caller.uid, accountType } satisfies UsersMeResponse);
   } catch (err) {
     console.error('users-me handler failed', err);
     return serverError(err instanceof Error ? err.message : undefined);

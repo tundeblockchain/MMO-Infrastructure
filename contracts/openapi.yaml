@@ -97,11 +97,11 @@ paths:
         **mmo-admin:** call this with `Authorization: Bearer <Firebase ID token>`
         right after sign-in, before any catalog publish.
 
-        `AUTO_ADMIN_ON_LOGIN` is per-stage (dev and prod are both `true` for now).
-        Only the exact value `true` writes `accountType: admin`. A missing or any
-        other value upserts `player` and never downgrades an existing admin.
-        Switching the flag off does not demote existing admins; demote a row by
-        hand with put-item `accountType: player`.
+        Writes `accountType: admin` only when the verified Firebase token has
+        `email_verified === true` and the email (lowercased + trimmed) is on the
+        per-stage `ADMIN_EMAIL_ALLOWLIST` (CDK context / env, comma-separated).
+        Missing or empty allowlist fails closed. Everyone else is upserted as
+        `player`. Existing admins are never demoted automatically.
 
         Catalog publish still uses the users table as the only admin gate
         (403 unless `accountType === admin`).

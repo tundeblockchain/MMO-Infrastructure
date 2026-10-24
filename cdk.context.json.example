@@ -4,5 +4,7 @@
   "githubBranch": "develop",
   "githubConnectionArn": "arn:aws:codestar-connections:REGION:ACCOUNT:connection/UUID",
   "account": "YOUR_ACCOUNT_ID",
-  "region": "eu-west-2"
+  "region": "eu-west-2",
+  "adminEmailAllowlistDev": "admin@example.com",
+  "adminEmailAllowlistProd": "admin@example.com"
 }
