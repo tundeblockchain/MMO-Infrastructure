@@ -162,4 +162,39 @@ describe('MMO-27: users table is additive; existing tables and stacks unchanged'
       }
     }
   });
+
+  it('grants users-me read/write access to the users table', () => {
+    const { dev } = createStages();
+    const template = Template.fromStack(dev.apiStack);
+    const policies = template.findResources('AWS::IAM::Policy');
+
+    const usersMePolicy = Object.entries(policies).find(([logicalId]) =>
+      logicalId.startsWith('UsersMeFnServiceRoleDefaultPolicy')
+    );
+    expect(usersMePolicy).toBeDefined();
+
+    const statements = (
+      usersMePolicy?.[1] as {
+        Properties?: { PolicyDocument?: { Statement?: Array<{ Action?: string | string[]; Resource?: unknown }> } };
+      }
+    ).Properties?.PolicyDocument?.Statement ?? [];
+
+    const actionList = (statement: { Action?: string | string[] }): string[] =>
+      Array.isArray(statement.Action)
+        ? statement.Action
+        : statement.Action
+          ? [statement.Action]
+          : [];
+
+    const usersStatements = statements.filter((statement) =>
+      JSON.stringify(statement.Resource ?? '').includes('UsersTable')
+    );
+    const tableWrite = usersStatements.find((statement) =>
+      actionList(statement).includes('dynamodb:PutItem')
+    );
+    expect(tableWrite).toBeDefined();
+    expect(actionList(tableWrite!)).toEqual(
+      expect.arrayContaining(['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem'])
+    );
+  });
 });

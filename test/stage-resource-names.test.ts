@@ -79,8 +79,8 @@ const MAIN_PROD_PHYSICAL_NAMES = [
   'mmo-prod/internal-save-api-key',
 ].sort();
 
-const ADDED_DEV_USERS_TABLE = 'mmo-dev-users';
-const ADDED_PROD_USERS_TABLE = 'mmo-prod-users';
+const ADDED_DEV_NAMES = ['mmo-dev-users', 'mmo-dev-users-me'];
+const ADDED_PROD_NAMES = ['mmo-prod-users', 'mmo-prod-users-me'];
 
 describe('MMO-24: prod CloudFormation stack names only', () => {
   it('namespaces only the prod CloudFormation stack names', () => {
@@ -120,7 +120,7 @@ describe('MMO-24: prod CloudFormation stack names only', () => {
     expect((prodData as cdk.Stack).stackName).toBe('mmo-prod-Data');
   });
 
-  it('dev physical names keep every main resource and only add mmo-dev-users', () => {
+  it('dev physical names keep every main resource and only add users table + users-me', () => {
     const { dev } = createStages();
     const devNames = [
       ...collectHardcodedNames(dev.dataStack),
@@ -128,10 +128,10 @@ describe('MMO-24: prod CloudFormation stack names only', () => {
     ].map((row) => row.physicalName);
 
     expect(devNames).toEqual(expect.arrayContaining(MAIN_DEV_PHYSICAL_NAMES));
-    expect(devNames.filter((name) => name !== ADDED_DEV_USERS_TABLE).sort()).toEqual(
+    expect(devNames.filter((name) => !ADDED_DEV_NAMES.includes(name)).sort()).toEqual(
       MAIN_DEV_PHYSICAL_NAMES
     );
-    expect(devNames).toContain(ADDED_DEV_USERS_TABLE);
+    expect(devNames).toEqual(expect.arrayContaining(ADDED_DEV_NAMES));
   });
 
   it('prod table name stays mmo-prod-game and other prod physical names stay on main', () => {
@@ -141,7 +141,7 @@ describe('MMO-24: prod CloudFormation stack names only', () => {
       TableName: 'mmo-prod-game',
     });
     prodData.hasResourceProperties('AWS::DynamoDB::Table', {
-      TableName: ADDED_PROD_USERS_TABLE,
+      TableName: 'mmo-prod-users',
     });
 
     const prodNames = [
@@ -150,11 +150,11 @@ describe('MMO-24: prod CloudFormation stack names only', () => {
     ].map((row) => row.physicalName);
 
     expect(prodNames).toEqual(expect.arrayContaining(MAIN_PROD_PHYSICAL_NAMES));
-    expect(prodNames.filter((name) => name !== ADDED_PROD_USERS_TABLE).sort()).toEqual(
+    expect(prodNames.filter((name) => !ADDED_PROD_NAMES.includes(name)).sort()).toEqual(
       MAIN_PROD_PHYSICAL_NAMES
     );
     expect(prodNames).toContain('mmo-prod-game');
-    expect(prodNames).toContain(ADDED_PROD_USERS_TABLE);
+    expect(prodNames).toEqual(expect.arrayContaining(ADDED_PROD_NAMES));
     expect(prodNames).not.toContain('mmo-prod-game-v2');
   });
 
@@ -169,8 +169,8 @@ describe('MMO-24: prod CloudFormation stack names only', () => {
         .map((row) => row.physicalName)
         .sort();
 
-    expect(byType(dev, 'AWS::DynamoDB::Table')).toEqual(['mmo-dev-game', ADDED_DEV_USERS_TABLE]);
-    expect(byType(prod, 'AWS::DynamoDB::Table')).toEqual(['mmo-prod-game', ADDED_PROD_USERS_TABLE]);
+    expect(byType(dev, 'AWS::DynamoDB::Table')).toEqual(['mmo-dev-game', 'mmo-dev-users']);
+    expect(byType(prod, 'AWS::DynamoDB::Table')).toEqual(['mmo-prod-game', 'mmo-prod-users']);
     expect(byType(dev, 'AWS::SecretsManager::Secret')).toEqual([
       'mmo-dev/firebase-service-account',
       'mmo-dev/game-session-jwt',
@@ -187,6 +187,7 @@ describe('MMO-24: prod CloudFormation stack names only', () => {
       'mmo-dev-catalog-write',
       'mmo-dev-characters',
       'mmo-dev-characters-save',
+      'mmo-dev-users-me',
     ]);
     expect(byType(prod, 'AWS::Lambda::Function')).toEqual([
       'mmo-prod-auth-session',
@@ -194,6 +195,7 @@ describe('MMO-24: prod CloudFormation stack names only', () => {
       'mmo-prod-catalog-write',
       'mmo-prod-characters',
       'mmo-prod-characters-save',
+      'mmo-prod-users-me',
     ]);
   });
 });

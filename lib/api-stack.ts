@@ -94,8 +94,19 @@ export class ApiStack extends cdk.Stack {
       entry: path.join(lambdasDir, 'catalog-write', 'handler.ts'),
       description: 'Authenticated catalog publish API (MMO-7 / MMO-27)',
     });
-    catalogWriteFn.addEnvironment('USERS_TABLE_NAME', `${prefix}-users`);
+    catalogWriteFn.addEnvironment('USERS_TABLE_NAME', props.usersTable.tableName);
     props.usersTable.grantReadData(catalogWriteFn);
+
+    const usersMeFn = createLambda('UsersMeFn', {
+      functionName: `${prefix}-users-me`,
+      entry: path.join(lambdasDir, 'users-me', 'handler.ts'),
+      description: 'Upsert the signed-in Firebase user into the users table (MMO-27)',
+    });
+    usersMeFn.addEnvironment('USERS_TABLE_NAME', props.usersTable.tableName);
+    // TODO(MMO-27): set AUTO_ADMIN_ON_LOGIN to 'false' to go back to manual admin.
+    usersMeFn.addEnvironment('AUTO_ADMIN_ON_LOGIN', 'true');
+    props.usersTable.grantReadWriteData(usersMeFn);
+    props.firebaseSecret.grantRead(usersMeFn);
 
     const lambdaFunctions = [authSessionFn, charactersFn, charactersSaveFn, catalogWriteFn];
 
@@ -176,6 +187,11 @@ export class ApiStack extends cdk.Stack {
       catalogWriteFn
     );
 
+    const usersMeIntegration = new apigwv2Integrations.HttpLambdaIntegration(
+      'UsersMeIntegration',
+      usersMeFn
+    );
+
     this.httpApi.addRoutes({
       path: '/catalog/versions',
       methods: [apigwv2.HttpMethod.GET],
@@ -198,6 +214,12 @@ export class ApiStack extends cdk.Stack {
       path: '/catalog/{catalogType}/versions',
       methods: [apigwv2.HttpMethod.POST],
       integration: catalogWriteIntegration,
+    });
+
+    this.httpApi.addRoutes({
+      path: '/users/me',
+      methods: [apigwv2.HttpMethod.POST],
+      integration: usersMeIntegration,
     });
 
     new cdk.CfnOutput(this, 'ApiUrl', {

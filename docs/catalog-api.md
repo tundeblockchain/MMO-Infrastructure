@@ -94,8 +94,12 @@ game-table keys, GSIs, and names are unchanged.
 | **accountType** | string | `player` or `admin` |
 
 Table names: `mmo-dev-users` (dev), `mmo-prod-users` (prod). A missing row is
-treated as `player`. New users default to player; the API does not insert this
-row. Promote an account with:
+treated as `player` by catalog publish. `POST /users/me` upserts the signed-in
+caller. While `AUTO_ADMIN_ON_LOGIN` is `true` (temporary default) that write is
+`admin`. **TODO(MMO-27):** set the flag `false` to upsert `player` instead and
+never downgrade an existing admin.
+
+Manual fallback (flag off):
 
 ```
 aws dynamodb put-item --table-name mmo-prod-users --item '{"uid":{"S":"<FIREBASE_UID>"},"accountType":{"S":"admin"}}' --region <REGION>
@@ -364,14 +368,20 @@ The token is verified with Firebase Admin `verifyIdToken` (signature, expiry, an
 `aud`/`iss` for the Firebase project in Secrets Manager
 `mmo-{stage}/firebase-service-account`). The user's Firebase UID is recorded as `createdBy`.
 
-**Admin-only:** after the token is verified, catalog-write looks up `uid` in the
-users table (`mmo-dev-users` / `mmo-prod-users`). Publish is allowed only when
-`accountType` === `admin`. A missing row is treated as player and returns **403**
-(do not treat this as "refresh token and retry"). New users default to player;
-the API does not insert a users-table row. Expired or invalid tokens return **401**
-(client should force-refresh the ID token and retry once).
+**mmo-admin contract:** after Firebase sign-in, call `POST /users/me` with
+`Authorization: Bearer <Firebase ID token>` **before any publish**. Response
+`200 { "uid", "accountType" }`. Missing/invalid token → **401**.
 
-Promote an account to admin (placeholders only — no account ids or secrets):
+**Admin-only publish:** after the token is verified, catalog-write looks up `uid`
+in the users table (`mmo-dev-users` / `mmo-prod-users`). Publish is allowed only
+when `accountType` === `admin`. A missing row is treated as player and returns
+**403** (do not treat this as "refresh token and retry"). Expired or invalid
+tokens return **401** (client should force-refresh the ID token and retry once).
+
+`AUTO_ADMIN_ON_LOGIN` defaults to `true` so `POST /users/me` writes `admin`.
+**TODO(MMO-27):** set `AUTO_ADMIN_ON_LOGIN=false` to go back to manual admin.
+When the flag is `false`, `POST /users/me` upserts `player` and never downgrades
+an existing admin. Manual fallback:
 
 ```
 aws dynamodb put-item --table-name mmo-prod-users --item '{"uid":{"S":"<FIREBASE_UID>"},"accountType":{"S":"admin"}}' --region <REGION>
@@ -383,7 +393,7 @@ Use `--table-name mmo-dev-users` for the dev stage.
 
 1. User signs in via Firebase Auth (email/password, Google, etc.)
 2. Client calls `firebase.auth().currentUser.getIdToken()`
-3. Client includes the token in API requests
+3. Client calls `POST /users/me` with that token, then includes it on publish
 
 Read endpoints do **not** require authentication. They accept an `Authorization` header
 without error and do not verify it, so unauthenticated ZoneServer reads keep working.
@@ -406,4 +416,5 @@ For complete request and response schemas, including all catalog data structures
 | Get latest versions | `GET /catalog/versions/latest` | None | Pin these at boot |
 | List all versions | `GET /catalog/versions` | None | Version metadata only |
 | Get catalog data | `GET /catalog/{type}/v/{ver}` | None | Full catalog payload |
+| Upsert signed-in user | `POST /users/me` | Firebase JWT | Call after sign-in, before publish |
 | Publish new version | `POST /catalog/{type}/versions` | Firebase JWT + users-table admin | Auto-allocates version |

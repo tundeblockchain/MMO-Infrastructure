@@ -24,7 +24,7 @@ describe('HTTP API CORS (MMO-26 / MMO-27)', () => {
     });
   });
 
-  it('sets USERS_TABLE_NAME on the catalog-write Lambda', () => {
+  it('derives USERS_TABLE_NAME from the users table construct', () => {
     const app = new cdk.App();
     const stage = new MmoStage(app, 'Dev', { env: ENV, stageName: 'dev' });
     const template = Template.fromStack(stage.apiStack);
@@ -33,7 +33,27 @@ describe('HTTP API CORS (MMO-26 / MMO-27)', () => {
       FunctionName: 'mmo-dev-catalog-write',
       Environment: {
         Variables: Match.objectLike({
-          USERS_TABLE_NAME: 'mmo-dev-users',
+          USERS_TABLE_NAME: { 'Fn::ImportValue': Match.stringLikeRegexp('UsersTable') },
+        }),
+      },
+    });
+  });
+
+  it('adds POST /users/me with AUTO_ADMIN_ON_LOGIN default true', () => {
+    const app = new cdk.App();
+    const stage = new MmoStage(app, 'Dev', { env: ENV, stageName: 'dev' });
+    const template = Template.fromStack(stage.apiStack);
+
+    template.hasResourceProperties('AWS::ApiGatewayV2::Route', {
+      RouteKey: 'POST /users/me',
+    });
+
+    template.hasResourceProperties('AWS::Lambda::Function', {
+      FunctionName: 'mmo-dev-users-me',
+      Environment: {
+        Variables: Match.objectLike({
+          AUTO_ADMIN_ON_LOGIN: 'true',
+          USERS_TABLE_NAME: { 'Fn::ImportValue': Match.stringLikeRegexp('UsersTable') },
         }),
       },
     });

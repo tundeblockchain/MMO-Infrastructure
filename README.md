@@ -87,18 +87,27 @@ it comes from the secret you upload (`mmo-dev/firebase-service-account` or
 ### Catalog admin (users table)
 
 `POST /catalog/{type}/versions` requires a valid Firebase ID token **and** a users
-table row whose `accountType` is `admin`. Partition key is Firebase `uid`.
+table row whose `accountType` is `admin`. Partition key is Firebase `uid`. Missing
+or invalid/expired tokens return **401**. A valid token whose account is not admin
+(no row or `player`) returns **403**. Catalog GET routes stay public and ignore
+`Authorization`.
 
-New users default to **player**. A missing row is treated as player (the API does
-not insert users-table rows). Promote your own account after deploy:
+**mmo-admin contract:** right after Firebase sign-in, before any publish, call
+`POST /users/me` with `Authorization: Bearer <Firebase ID token>`. That upserts
+the caller's `uid` into the users table and returns `{ "uid", "accountType" }`.
+
+`AUTO_ADMIN_ON_LOGIN` defaults to `true` (temporary): `POST /users/me` writes
+`accountType: admin`. **TODO(MMO-27):** set `AUTO_ADMIN_ON_LOGIN=false` on the
+`users-me` Lambda to go back to manual admin. When the flag is `false`, the
+endpoint upserts `player` and never downgrades an existing admin.
+
+Manual fallback (flag off):
 
 ```
 aws dynamodb put-item --table-name mmo-prod-users --item '{"uid":{"S":"<FIREBASE_UID>"},"accountType":{"S":"admin"}}' --region <REGION>
 ```
 
-Use table `mmo-dev-users` for the dev stage. Missing or invalid/expired tokens
-return **401**. A valid token whose account is not admin (no row or `player`)
-returns **403**. Catalog GET routes stay public and ignore `Authorization`.
+Use table `mmo-dev-users` for the dev stage.
 
 ### Unity / ZoneServer config (dev)
 
@@ -122,6 +131,7 @@ After the Dev stage deploys, note CloudFormation outputs:
 | GET | `/catalog/versions/latest` | None | Get latest published version per catalog type |
 | GET | `/catalog/versions` | None | List all published catalog versions |
 | GET | `/catalog/{type}/v/{ver}` | None | Get catalog data by type and version |
+| POST | `/users/me` | Firebase ID token | Upsert caller into users table (`admin` while `AUTO_ADMIN_ON_LOGIN=true`) |
 | POST | `/catalog/{type}/versions` | Firebase ID token + users-table admin | Publish new catalog version |
 
 ## Documentation
