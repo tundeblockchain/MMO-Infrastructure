@@ -511,7 +511,7 @@ paths:
                           levelMultiplier: 15
                         armorReductionPerPoint: 0.001
                         maxArmorReduction: 0.75
-                        blockDamageReduction: 0.50
+                        blockDamageReduction: 0.60
                       additionalConstants:
                         defaultAttackRange: 2.5
                         targetRange: 30
@@ -762,7 +762,7 @@ paths:
                         levelMultiplier: 15
                       armorReductionPerPoint: 0.001
                       maxArmorReduction: 0.75
-                      blockDamageReduction: 0.50
+                      blockDamageReduction: 0.60
                     glancingHit:
                       damageMultiplier: 0.50
                       canCrit: false
@@ -780,7 +780,7 @@ paths:
                       baseDodgeChance: 0.02
                       maxDodgeChance: 0.40
                     timing:
-                      globalCooldown: 1.5
+                      globalCooldown: 0.75
                       outOfCombatHpRegen: 0.05
                       outOfCombatResourceRegen: 0.10
                       combatDropoffSeconds: 10
@@ -790,8 +790,8 @@ paths:
                       staggerDurationSeconds: 2
                       staggerImmunitySeconds: 3
                     pvp:
-                      globalDamageMultiplier: 0.60
-                      globalHealingMultiplier: 0.70
+                      globalDamageMultiplier: 0.80
+                      globalHealingMultiplier: 0.75
                       ccDurationMultiplier: 0.50
                       executeThresholdModifier: -0.10
                     additionalConstants:
@@ -2087,8 +2087,8 @@ components:
               example: 0.75
             blockDamageReduction:
               type: number
-              description: Block damage reduction (decimal, 0.50 = 50%)
-              example: 0.50
+              description: Block damage reduction (decimal, 0.60 = 60%)
+              example: 0.60,
         glancingHit:
           type: object
           properties:
@@ -2154,7 +2154,7 @@ components:
             globalCooldown:
               type: number
               description: GCD in seconds
-              example: 1.5
+              example: 0.75,
             outOfCombatHpRegen:
               type: number
               description: "HP regen rate as decimal (0.05 = 5% per tick)"
@@ -2186,12 +2186,12 @@ components:
           properties:
             globalDamageMultiplier:
               type: number
-              description: "Global PvP damage reduction as decimal (0.60 = 60%)"
-              example: 0.60
+              description: "Global PvP damage multiplier as decimal (0.80 = 80%)"
+              example: 0.80
             globalHealingMultiplier:
               type: number
-              description: "Global PvP healing reduction as decimal (0.70 = 70%)"
-              example: 0.70
+              description: "Global PvP healing multiplier as decimal (0.75 = 75%)"
+              example: 0.75
             ccDurationMultiplier:
               type: number
               description: "CC duration multiplier as decimal (0.50 = 50%)"
