@@ -195,17 +195,12 @@ export function resolveTicketTtlSeconds(raw: string | undefined): number {
 }
 
 /**
- * Production: Secrets Manager JSON `{ "secret": "..." }` via ZONE_TICKET_SECRET_ARN.
- * Tests only: ZONE_TICKET_SECRET (never set this on the deployed Lambda).
+ * Production and tests: Secrets Manager JSON `{ "secret": "..." }` via
+ * ZONE_TICKET_SECRET_ARN. There is no env-var fallback for the key.
+ * Tests inject the value with `setZoneTicketSecretForTests`.
  */
 export async function getZoneTicketSecret(): Promise<string> {
   if (cachedSecret) {
-    return cachedSecret;
-  }
-
-  const testSecret = process.env.ZONE_TICKET_SECRET;
-  if (testSecret) {
-    cachedSecret = testSecret;
     return cachedSecret;
   }
 
@@ -234,4 +229,9 @@ export async function getZoneTicketSecret(): Promise<string> {
 /** Test-only: drop the in-process cache. */
 export function resetZoneTicketSecretCache(): void {
   cachedSecret = null;
+}
+
+/** Test-only: inject the HMAC key without an env-var backdoor. */
+export function setZoneTicketSecretForTests(secret: string): void {
+  cachedSecret = secret;
 }

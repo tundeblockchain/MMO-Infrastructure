@@ -2,17 +2,23 @@
  * MMO-50: ZoneServer ticket encoding and the MMO-51 test vector.
  */
 
+import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import { mockClient } from 'aws-sdk-client-mock';
 import {
   DEFAULT_ZONE_TICKET_AUD,
   DEFAULT_ZONE_TICKET_ISS,
   encodeHeaderJson,
   encodePayloadJson,
+  getZoneTicketSecret,
+  resetZoneTicketSecretCache,
   resolveTicketTtlSeconds,
   signZoneTicket,
   verifyZoneTicket,
   ZoneTicketClaims,
   ZoneTicketError,
 } from '../lambdas/auth-session/ticket';
+
+const secretsMock = mockClient(SecretsManagerClient);
 
 /** Fake key only. Never a production secret. */
 export const TEST_VECTOR_SECRET = 'test-only-zoneserver-ticket-hmac-key-do-not-use';
@@ -98,5 +104,22 @@ describe('ZoneServer ticket format', () => {
     expect(resolveTicketTtlSeconds('86400')).toBe(300);
     expect(resolveTicketTtlSeconds('120')).toBe(120);
     expect(resolveTicketTtlSeconds(undefined)).toBe(300);
+  });
+
+  it('loads the HMAC key only from Secrets Manager and ignores ZONE_TICKET_SECRET', async () => {
+    secretsMock.reset();
+    resetZoneTicketSecretCache();
+    process.env.ZONE_TICKET_SECRET = 'must-not-be-used-from-env';
+    process.env.ZONE_TICKET_SECRET_ARN = 'arn:aws:secretsmanager:eu-west-2:000000000000:secret:test';
+    secretsMock.on(GetSecretValueCommand).resolves({
+      SecretString: JSON.stringify({ secret: 'from-secrets-manager-only' }),
+    });
+
+    await expect(getZoneTicketSecret()).resolves.toBe('from-secrets-manager-only');
+    expect(secretsMock.commandCalls(GetSecretValueCommand)).toHaveLength(1);
+
+    delete process.env.ZONE_TICKET_SECRET;
+    delete process.env.ZONE_TICKET_SECRET_ARN;
+    resetZoneTicketSecretCache();
   });
 });

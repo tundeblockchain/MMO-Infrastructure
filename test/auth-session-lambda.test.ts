@@ -2,8 +2,9 @@
  * MMO-50: POST /auth/session issues a short-lived signed ZoneServer ticket.
  *
  * - Valid Firebase token + UsersTable row → ticket with claims and exp ≤ 5 min
- * - Bad, expired, or wrong-audience Firebase token → 401
- * - Missing UsersTable row → 403 (call /users/me first)
+ * - Bad, expired, wrong-audience, revoked, or disabled Firebase token → 401 UNAUTHORIZED
+ * - Missing UsersTable row → 403 NO_PROFILE
+ * - UsersTable row with banned: true → 403 BANNED
  * - Each ticket has a unique jti
  * - HMAC-SHA256 verifies with the key and fails when tampered
  */
@@ -25,7 +26,10 @@ jest.mock('../lambdas/shared/auth', () => {
 
 import { verifyFirebaseIdToken } from '../lambdas/shared/auth';
 import { handler } from '../lambdas/auth-session/handler';
-import { resetZoneTicketSecretCache } from '../lambdas/auth-session/ticket';
+import {
+  resetZoneTicketSecretCache,
+  setZoneTicketSecretForTests,
+} from '../lambdas/auth-session/ticket';
 
 const mockVerifyFirebaseIdToken = verifyFirebaseIdToken as jest.MockedFunction<
   typeof verifyFirebaseIdToken
@@ -45,6 +49,13 @@ function decodedToken(overrides?: { uid?: string }) {
     iss: 'https://securetoken.google.com/test-project',
     sub: overrides?.uid ?? VALID_UID,
   } as never;
+}
+
+function firebaseAuthError(code: string, message: string): Error {
+  const err = new Error(message) as Error & { code: string };
+  err.code = code;
+  err.name = 'FirebaseAuthError';
+  return err;
 }
 
 function createMockEvent(options?: {
@@ -85,27 +96,42 @@ function createMockEvent(options?: {
   };
 }
 
-function mockUserRow(accountType: 'player' | 'admin' | undefined): void {
+function mockUserRow(
+  accountType: 'player' | 'admin' | undefined,
+  extras?: { banned?: boolean }
+): void {
   if (accountType === undefined) {
     ddbMock.on(GetCommand).resolves({ Item: undefined });
     return;
   }
-  ddbMock.on(GetCommand).resolves({ Item: { uid: VALID_UID, accountType } });
+  ddbMock.on(GetCommand).resolves({
+    Item: { uid: VALID_UID, accountType, ...(extras?.banned ? { banned: true } : {}) },
+  });
+}
+
+function parseError(response: { statusCode: number; body: string }): {
+  statusCode: number;
+  code: string;
+  message: string;
+} {
+  const body = JSON.parse(response.body) as { code: string; message: string };
+  return { statusCode: response.statusCode, code: body.code, message: body.message };
 }
 
 describe('POST /auth/session', () => {
   beforeAll(() => {
     process.env.USERS_TABLE_NAME = USERS_TABLE_NAME;
-    process.env.ZONE_TICKET_SECRET = TICKET_SECRET;
     process.env.ZONE_TICKET_TTL_SECONDS = '300';
     process.env.ZONE_TICKET_AUDIENCE = 'zoneserver';
     process.env.ZONE_TICKET_ISSUER = 'mmo-api';
+    delete process.env.ZONE_TICKET_SECRET;
   });
 
   beforeEach(() => {
     ddbMock.reset();
     jest.clearAllMocks();
     resetZoneTicketSecretCache();
+    setZoneTicketSecretForTests(TICKET_SECRET);
   });
 
   it('returns a ticket with correct claims and exp ≤ 5 minutes for a valid token', async () => {
@@ -122,16 +148,22 @@ describe('POST /auth/session', () => {
     const after = Math.floor(Date.now() / 1000);
 
     expect(response.statusCode).toBe(200);
+    expect(mockVerifyFirebaseIdToken).toHaveBeenCalledWith('valid-firebase-token', {
+      checkRevoked: true,
+    });
     const body = JSON.parse(response.body) as {
       ticket: string;
       uid: string;
       accountType: string;
       expiresInSeconds: number;
+      gameSessionToken?: string;
     };
     expect(body.uid).toBe(VALID_UID);
     expect(body.accountType).toBe('player');
     expect(body.expiresInSeconds).toBe(300);
     expect(body.expiresInSeconds).toBeLessThanOrEqual(300);
+    expect(body.ticket).toEqual(expect.any(String));
+    expect(body.gameSessionToken).toBeUndefined();
 
     const claims = verifyZoneTicket(TICKET_SECRET, body.ticket, { nowSeconds: before });
     expect(claims.uid).toBe(VALID_UID);
@@ -166,18 +198,22 @@ describe('POST /auth/session', () => {
     const response = result as { statusCode: number; body: string };
     expect(response.statusCode).toBe(200);
     expect(JSON.parse(response.body).accountType).toBe('admin');
-    expect(mockVerifyFirebaseIdToken).toHaveBeenCalledWith('body-firebase-token');
+    expect(mockVerifyFirebaseIdToken).toHaveBeenCalledWith('body-firebase-token', {
+      checkRevoked: true,
+    });
   });
 
-  it('returns 401 when the token is missing', async () => {
+  it('returns 401 UNAUTHORIZED when the token is missing', async () => {
     const result = await handler(createMockEvent(), {} as never, {} as never);
-    const response = result as { statusCode: number; body: string };
-    expect(response.statusCode).toBe(401);
-    expect(JSON.parse(response.body).error).toContain('Firebase ID token');
+    expect(parseError(result as { statusCode: number; body: string })).toEqual({
+      statusCode: 401,
+      code: 'UNAUTHORIZED',
+      message: 'Missing Firebase ID token',
+    });
     expect(mockVerifyFirebaseIdToken).not.toHaveBeenCalled();
   });
 
-  it('returns 401 when the Firebase token is invalid (bad signature)', async () => {
+  it('returns 401 UNAUTHORIZED when the Firebase token is invalid (bad signature)', async () => {
     mockVerifyFirebaseIdToken.mockRejectedValueOnce(
       new Error('Firebase ID token has invalid signature')
     );
@@ -187,13 +223,18 @@ describe('POST /auth/session', () => {
       {} as never,
       {} as never
     );
-    const response = result as { statusCode: number; body: string };
-    expect(response.statusCode).toBe(401);
-    expect(JSON.parse(response.body).error).toBe('Invalid Firebase token');
+    expect(parseError(result as { statusCode: number; body: string })).toEqual({
+      statusCode: 401,
+      code: 'UNAUTHORIZED',
+      message: 'Invalid Firebase token',
+    });
     expect(ddbMock.commandCalls(GetCommand)).toHaveLength(0);
+    expect(mockVerifyFirebaseIdToken).toHaveBeenCalledWith('bad-signature-token', {
+      checkRevoked: true,
+    });
   });
 
-  it('returns 401 when the Firebase token is expired', async () => {
+  it('returns 401 UNAUTHORIZED when the Firebase token is expired', async () => {
     mockVerifyFirebaseIdToken.mockRejectedValueOnce(
       new Error('Firebase ID token has expired')
     );
@@ -203,12 +244,14 @@ describe('POST /auth/session', () => {
       {} as never,
       {} as never
     );
-    const response = result as { statusCode: number; body: string };
-    expect(response.statusCode).toBe(401);
-    expect(JSON.parse(response.body).error).toBe('Invalid Firebase token');
+    expect(parseError(result as { statusCode: number; body: string })).toEqual({
+      statusCode: 401,
+      code: 'UNAUTHORIZED',
+      message: 'Invalid Firebase token',
+    });
   });
 
-  it('returns 401 when the Firebase token audience is wrong', async () => {
+  it('returns 401 UNAUTHORIZED when the Firebase token audience is wrong', async () => {
     mockVerifyFirebaseIdToken.mockRejectedValueOnce(
       new Error('Firebase ID token has incorrect "aud" (audience) claim.')
     );
@@ -218,12 +261,55 @@ describe('POST /auth/session', () => {
       {} as never,
       {} as never
     );
-    const response = result as { statusCode: number; body: string };
-    expect(response.statusCode).toBe(401);
-    expect(JSON.parse(response.body).error).toBe('Invalid Firebase token');
+    expect(parseError(result as { statusCode: number; body: string })).toEqual({
+      statusCode: 401,
+      code: 'UNAUTHORIZED',
+      message: 'Invalid Firebase token',
+    });
   });
 
-  it('returns 403 when the UsersTable row is missing', async () => {
+  it('returns 401 UNAUTHORIZED when the Firebase token is revoked', async () => {
+    mockVerifyFirebaseIdToken.mockRejectedValueOnce(
+      firebaseAuthError('auth/id-token-revoked', 'Firebase ID token has been revoked.')
+    );
+
+    const result = await handler(
+      createMockEvent({ authorization: 'Bearer revoked-token' }),
+      {} as never,
+      {} as never
+    );
+    expect(parseError(result as { statusCode: number; body: string })).toEqual({
+      statusCode: 401,
+      code: 'UNAUTHORIZED',
+      message: 'Invalid Firebase token',
+    });
+    expect(mockVerifyFirebaseIdToken).toHaveBeenCalledWith('revoked-token', {
+      checkRevoked: true,
+    });
+    expect(ddbMock.commandCalls(GetCommand)).toHaveLength(0);
+  });
+
+  it('returns 401 UNAUTHORIZED when the Firebase user is disabled', async () => {
+    mockVerifyFirebaseIdToken.mockRejectedValueOnce(
+      firebaseAuthError('auth/user-disabled', 'The user account has been disabled.')
+    );
+
+    const result = await handler(
+      createMockEvent({ authorization: 'Bearer disabled-user-token' }),
+      {} as never,
+      {} as never
+    );
+    expect(parseError(result as { statusCode: number; body: string })).toEqual({
+      statusCode: 401,
+      code: 'UNAUTHORIZED',
+      message: 'Invalid Firebase token',
+    });
+    expect(mockVerifyFirebaseIdToken).toHaveBeenCalledWith('disabled-user-token', {
+      checkRevoked: true,
+    });
+  });
+
+  it('returns 403 NO_PROFILE when the UsersTable row is missing', async () => {
     mockVerifyFirebaseIdToken.mockResolvedValueOnce(decodedToken());
     mockUserRow(undefined);
 
@@ -232,9 +318,27 @@ describe('POST /auth/session', () => {
       {} as never,
       {} as never
     );
-    const response = result as { statusCode: number; body: string };
-    expect(response.statusCode).toBe(403);
-    expect(JSON.parse(response.body).error).toBe('No user profile. Call /users/me first.');
+    expect(parseError(result as { statusCode: number; body: string })).toEqual({
+      statusCode: 403,
+      code: 'NO_PROFILE',
+      message: 'No user profile. Call /users/me first.',
+    });
+  });
+
+  it('returns 403 BANNED when the UsersTable row has banned: true', async () => {
+    mockVerifyFirebaseIdToken.mockResolvedValueOnce(decodedToken());
+    mockUserRow('player', { banned: true });
+
+    const result = await handler(
+      createMockEvent({ authorization: 'Bearer valid-firebase-token' }),
+      {} as never,
+      {} as never
+    );
+    expect(parseError(result as { statusCode: number; body: string })).toEqual({
+      statusCode: 403,
+      code: 'BANNED',
+      message: 'Account is banned',
+    });
   });
 
   it('issues tickets with unique jti values', async () => {

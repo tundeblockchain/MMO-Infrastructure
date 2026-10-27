@@ -66,11 +66,22 @@ describe('MMO-50: ZoneServer ticket secret and auth-session grants', () => {
     expect(JSON.stringify(data.toJSON())).not.toMatch(/AKIA[0-9A-Z]{16}/);
   });
 
-  it('does not embed a ticket secret value in the synthesized template', () => {
+  it('does not embed a ticket secret value or ZONE_TICKET_SECRET env on the Lambda', () => {
     const { data, api } = createDevTemplate();
     const combined = JSON.stringify(data.toJSON()) + JSON.stringify(api.toJSON());
-    expect(combined).not.toContain('ZONE_TICKET_SECRET":');
+    expect(combined).not.toContain('"ZONE_TICKET_SECRET"');
     expect(combined).not.toMatch(/"secret":\s*"[A-Za-z0-9]{16,}"/);
+
+    const functions = api.findResources('AWS::Lambda::Function');
+    const authSession = Object.values(functions).find(
+      (resource) =>
+        (resource as { Properties?: { FunctionName?: string } }).Properties?.FunctionName ===
+        'mmo-dev-auth-session'
+    ) as { Properties?: { Environment?: { Variables?: Record<string, unknown> } } };
+    expect(authSession).toBeDefined();
+    const env = authSession.Properties?.Environment?.Variables ?? {};
+    expect(env.ZONE_TICKET_SECRET).toBeUndefined();
+    expect(env.ZONE_TICKET_SECRET_ARN).toBeDefined();
   });
 
   it('configures auth-session with users table, ticket ARN, 5-minute TTL, and zoneserver audience', () => {

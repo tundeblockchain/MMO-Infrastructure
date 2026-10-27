@@ -1,9 +1,19 @@
 # ZoneServer ticket (MMO-50 / MMO-51)
 
-`POST /auth/session` verifies a Firebase ID token and, when a UsersTable row
-exists for that `uid`, returns a **short-lived signed ticket** for the C#
-ZoneServer handshake. The Unity client must call `GET` or `POST /users/me`
-first; a missing users-table row is **403**.
+`POST /auth/session` verifies a Firebase ID token (signature, issuer,
+audience, expiry, **and revocation** via `verifyIdToken(..., checkRevoked:
+true)`) and, when a UsersTable row exists for that `uid` and is not banned,
+returns a **short-lived signed ticket** for the C# ZoneServer handshake.
+
+**Response field names:** the client sends **`ticket`** to ZoneServer.
+`gameSessionToken` is the older 24h character / enter-world JWT used by
+`/characters` and `/characters/{id}/enter`. `/auth/session` does **not**
+return `gameSessionToken`. Do not send that older JWT as the ZoneServer
+handshake ticket.
+
+The Unity client must call `GET` or `POST /users/me` first; a missing
+users-table row is **403** `NO_PROFILE`. A row with `banned: true` is
+**403** `BANNED`.
 
 Tokens, tickets, and the HMAC key are **never logged** and **never shipped in
 the client**. Do not commit real keys, secret ARNs, account ids, or emails.
@@ -80,7 +90,8 @@ secret value in source or docs.
 3. Parse `SecretString` as JSON and use the `secret` field as the UTF-8 HMAC key.
 4. Cache in memory. Never write it to disk, logs, or client config.
 5. The auth-session Lambda uses the same secret (ARN via
-   `ZONE_TICKET_SECRET_ARN`, value fetched at runtime).
+   `ZONE_TICKET_SECRET_ARN`, value fetched at runtime). There is no
+   `ZONE_TICKET_SECRET` environment-variable fallback.
 
 The existing `mmo-{stage}/game-session-jwt` secret remains for 24h character /
 enter-world JWTs. Do not mix those tokens with this ticket format.
@@ -91,11 +102,32 @@ enter-world JWTs. Do not mix those tokens with this ticket format.
 
 - Firebase ID token as `Authorization: Bearer <token>` **or** JSON body
   `{ "firebaseIdToken": "<token>" }`.
-- **401** — missing, malformed, invalid signature, wrong issuer, wrong
-  audience, or expired Firebase token (fail closed).
-- **403** — Firebase token is valid but there is no UsersTable row for `uid`.
-  Message tells the client to call `/users/me` first.
+- Firebase Admin is called with `checkRevoked: true`. `auth/id-token-revoked`
+  and `auth/user-disabled` fail closed as **401**.
 - **200** — `{ "ticket", "uid", "accountType", "expiresInSeconds" }`.
+  Send `ticket` to ZoneServer. There is no `gameSessionToken` field.
+
+### UsersTable `banned` flag
+
+Auth-session reads the existing row (`uid` partition key) and does not write.
+If `banned` is the boolean `true`, the account is rejected. Missing `banned`,
+`false`, or any other value is treated as not banned.
+
+### Error body (`{ code, message }`)
+
+Every `/auth/session` error uses this shape:
+
+```json
+{ "code": "UNAUTHORIZED", "message": "Invalid Firebase token" }
+```
+
+| `code` | HTTP | Who returns it | When |
+|--------|------|----------------|------|
+| `UNAUTHORIZED` | 401 | auth-session | Missing, malformed, invalid signature, wrong issuer, wrong audience, expired, revoked (`auth/id-token-revoked`), or disabled (`auth/user-disabled`) Firebase token |
+| `NO_PROFILE` | 403 | auth-session | No UsersTable row for `uid`. Client must call `/users/me` first |
+| `BANNED` | 403 | auth-session | UsersTable row exists and `banned` is `true` |
+| `SERVER_FULL` | — | **ZoneServer only** | Capacity / instance full. Reserved so the client can handle one code set. auth-session never returns this |
+| `INTERNAL` | 500 | auth-session | Unexpected server error |
 
 ## Fixed test vector (fake key only)
 

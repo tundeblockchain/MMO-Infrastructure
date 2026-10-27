@@ -178,7 +178,7 @@ After the Dev stage deploys, note CloudFormation outputs:
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/auth/session` | Firebase ID token (Bearer or body) | Issue short-lived ZoneServer ticket (UsersTable row required; otherwise 403 → `/users/me`) |
+| POST | `/auth/session` | Firebase ID token (Bearer or body) | Issue short-lived ZoneServer **`ticket`** (not `gameSessionToken`). UsersTable row required; 403 `NO_PROFILE` → `/users/me`; 403 `BANNED` if `banned: true` |
 | GET | `/characters` | Firebase or game JWT | List characters |
 | POST | `/characters` | Firebase or game JWT | Create character `{ "name": "..." }` |
 | POST | `/characters/{id}/enter` | Game or Firebase JWT | Enter world + scoped JWT + zone host |
