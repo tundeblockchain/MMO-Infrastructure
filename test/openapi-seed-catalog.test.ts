@@ -43,6 +43,30 @@ function loadSpec(): OpenApiSpec {
   return yaml.load(fs.readFileSync(SPEC_PATH, 'utf8')) as OpenApiSpec;
 }
 
+interface NumericExample {
+  pointer: string;
+  type: string;
+  example: unknown;
+}
+
+function collectNumericExamples(node: unknown, pointer: string, out: NumericExample[]): void {
+  if (node === null || typeof node !== 'object') {
+    return;
+  }
+  if (Array.isArray(node)) {
+    node.forEach((item, index) => collectNumericExamples(item, `${pointer}/${index}`, out));
+    return;
+  }
+
+  const obj = node as Record<string, unknown>;
+  if ((obj.type === 'number' || obj.type === 'integer') && 'example' in obj) {
+    out.push({ pointer, type: obj.type as string, example: obj.example });
+  }
+  for (const [key, value] of Object.entries(obj)) {
+    collectNumericExamples(value, `${pointer}/${key}`, out);
+  }
+}
+
 function convertOpenApiSchema(schema: unknown): unknown {
   if (Array.isArray(schema)) {
     return schema.map(convertOpenApiSchema);
@@ -236,6 +260,24 @@ describe('OpenAPI spec vs seed catalogs (MMO-31)', () => {
     expect(validateElement).toBeDefined();
     expect(validateResonance).toBeDefined();
     expect(validateCombat).toBeDefined();
+  });
+
+  it('parses number/integer schema examples as YAML numbers, not strings', () => {
+    const examples: NumericExample[] = [];
+    collectNumericExamples(spec, '', examples);
+    expect(examples.length).toBeGreaterThan(0);
+
+    for (const item of examples) {
+      expect(typeof item.example).toBe('number');
+    }
+
+    const combat = schemas.CombatConstantsData as JsonSchema;
+    const defense = ((combat.properties as JsonSchema).defense as JsonSchema).properties as JsonSchema;
+    const timing = ((combat.properties as JsonSchema).timing as JsonSchema).properties as JsonSchema;
+    expect(typeof (defense.blockDamageReduction as JsonSchema).example).toBe('number');
+    expect((defense.blockDamageReduction as JsonSchema).example).toBe(0.60);
+    expect(typeof (timing.globalCooldown as JsonSchema).example).toBe('number');
+    expect((timing.globalCooldown as JsonSchema).example).toBe(0.75);
   });
 
   describe('every seed document validates', () => {

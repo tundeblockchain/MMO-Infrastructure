@@ -2088,7 +2088,7 @@ components:
             blockDamageReduction:
               type: number
               description: Block damage reduction (decimal, 0.60 = 60%)
-              example: 0.60,
+              example: 0.60
         glancingHit:
           type: object
           properties:
@@ -2154,7 +2154,7 @@ components:
             globalCooldown:
               type: number
               description: GCD in seconds
-              example: 0.75,
+              example: 0.75
             outOfCombatHpRegen:
               type: number
               description: "HP regen rate as decimal (0.05 = 5% per tick)"
