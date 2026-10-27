@@ -15,6 +15,7 @@ export interface ApiStackProps extends cdk.StackProps {
   readonly usersTable: dynamodb.ITable;
   readonly firebaseSecret: secretsmanager.ISecret;
   readonly gameJwtSecret: secretsmanager.ISecret;
+  readonly zoneTicketSecret: secretsmanager.ISecret;
   readonly internalSaveApiSecret: secretsmanager.ISecret;
   /** Comma-separated verified emails that POST /users/me may promote. Empty = nobody. */
   readonly adminEmailAllowlist?: string;
@@ -70,8 +71,17 @@ export class ApiStack extends cdk.Stack {
     const authSessionFn = createLambda('AuthSessionFn', {
       functionName: `${prefix}-auth-session`,
       entry: path.join(lambdasDir, 'auth-session', 'handler.ts'),
-      description: 'Verify Firebase ID token and issue game session JWT',
+      description:
+        'Verify Firebase ID token and issue a short-lived signed ZoneServer ticket',
     });
+    authSessionFn.addEnvironment('USERS_TABLE_NAME', props.usersTable.tableName);
+    authSessionFn.addEnvironment('ZONE_TICKET_SECRET_ARN', props.zoneTicketSecret.secretArn);
+    authSessionFn.addEnvironment('ZONE_TICKET_TTL_SECONDS', '300');
+    authSessionFn.addEnvironment('ZONE_TICKET_AUDIENCE', 'zoneserver');
+    authSessionFn.addEnvironment('ZONE_TICKET_ISSUER', 'mmo-api');
+    props.usersTable.grantReadData(authSessionFn);
+    props.zoneTicketSecret.grantRead(authSessionFn);
+    props.firebaseSecret.grantRead(authSessionFn);
 
     const charactersFn = createLambda('CharactersFn', {
       functionName: `${prefix}-characters`,
@@ -114,7 +124,9 @@ export class ApiStack extends cdk.Stack {
     props.usersTable.grantReadWriteData(usersMeFn);
     props.firebaseSecret.grantRead(usersMeFn);
 
-    const lambdaFunctions = [authSessionFn, charactersFn, charactersSaveFn, catalogWriteFn];
+    // auth-session is granted UsersTable + ZoneServer ticket secret above.
+    // It does not write the game table or mint 24h game JWTs.
+    const lambdaFunctions = [charactersFn, charactersSaveFn, catalogWriteFn];
 
     for (const fn of lambdaFunctions) {
       props.table.grantReadWriteData(fn);

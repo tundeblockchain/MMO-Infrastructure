@@ -1,6 +1,6 @@
 # MMO Infrastructure
 
-AWS CDK (TypeScript) for the MMO backend: **self-mutating CodePipeline**, API Gateway, Lambda, and DynamoDB. Firebase Auth is verified in Lambda; game session JWTs are issued for ZoneServer handshakes.
+AWS CDK (TypeScript) for the MMO backend: **self-mutating CodePipeline**, API Gateway, Lambda, and DynamoDB. Firebase Auth is verified in Lambda; `POST /auth/session` issues a short-lived HMAC-SHA256 ZoneServer ticket (MMO-50). Character endpoints still use longer-lived game session JWTs.
 
 ## Architecture
 
@@ -170,14 +170,15 @@ After the Dev stage deploys, note CloudFormation outputs:
 | Output | Use |
 |--------|-----|
 | `ApiUrl` | Unity REST base URL |
-| `GameJwtSecretArn` | ZoneServer JWT verification (read `secret` key) |
+| `ZoneServerTicketSecretName` | ZoneServer ticket HMAC key: Secrets Manager name `mmo-{stage}/zoneserver-ticket` (read JSON `secret`; see [ZoneServer ticket](docs/zoneserver-ticket.md)) |
+| `GameJwtSecretArn` | Longer-lived character / enter-world JWT (read `secret` key) |
 | `mmo-dev/internal-save-api-key` | ZoneServer `PUT /characters/{id}` header `X-Internal-Api-Key` |
 
 ## API endpoints (dev)
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/auth/session` | Firebase ID token (Bearer or body) | Issue game session JWT |
+| POST | `/auth/session` | Firebase ID token (Bearer or body) | Issue short-lived ZoneServer ticket (UsersTable row required; otherwise 403 → `/users/me`) |
 | GET | `/characters` | Firebase or game JWT | List characters |
 | POST | `/characters` | Firebase or game JWT | Create character `{ "name": "..." }` |
 | POST | `/characters/{id}/enter` | Game or Firebase JWT | Enter world + scoped JWT + zone host |
@@ -192,6 +193,7 @@ After the Dev stage deploys, note CloudFormation outputs:
 ## Documentation
 
 - **[Catalog API Guide](docs/catalog-api.md)** — DynamoDB key design, versioning rules, and endpoint reference
+- **[ZoneServer ticket](docs/zoneserver-ticket.md)** — HMAC-SHA256 claims, canonical encoding, Secrets Manager read path, MMO-51 test vector
 - **[OpenAPI Specification](contracts/openapi.yaml)** — Complete request/response schemas
 
 ## Local development

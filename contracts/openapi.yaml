@@ -1,15 +1,16 @@
 openapi: 3.0.3
 info:
   title: MMO Character API
-  version: 0.4.0
+  version: 0.5.0
   description: |
     MMO backend API for character management, authentication, and game metadata catalogs.
     
     **Authentication:**
+    - `POST /auth/session` verifies a Firebase ID token (signature, issuer, audience, expiry) and issues a short-lived HMAC-SHA256 ZoneServer ticket (MMO-50). A UsersTable row must already exist; otherwise 403 and the client must call `/users/me` first.
     - Character endpoints use Firebase ID tokens or game session JWTs
     - Catalog write endpoints require Firebase ID tokens whose uid has `accountType: admin` in the users table (missing row = player)
     - Catalog read endpoints are unauthenticated (for ZoneServer caching)
-    - mmo-admin must call `GET` or `POST /users/me` with the Bearer ID token right after sign-in, before any publish
+    - mmo-admin must call `GET` or `POST /users/me` with the Bearer ID token right after sign-in, before any publish or session ticket
     
     **Catalog Read APIs (MMO-6, MMO-10):**
     GET endpoints for versioned game metadata catalogs. All reads are by explicit version.
@@ -75,20 +76,68 @@ paths:
   /auth/session:
     post:
       tags: [auth]
-      summary: Exchange Firebase ID token for game session JWT
+      summary: Exchange Firebase ID token for a short-lived ZoneServer ticket
+      description: |
+        Verifies a Firebase ID token with Firebase Admin `verifyIdToken`
+        (signature, expiry, `aud` / `iss` must match the Firebase `project_id`
+        from Secrets Manager `mmo-{stage}/firebase-service-account`). Fail closed:
+        any verification error is **401**.
+
+        After verification, auth-session looks up `uid` in the users table.
+        A missing row is **403** — the client must call `GET` or `POST /users/me`
+        first. The handler never creates the users-table row.
+
+        On success it returns a compact JWS (HMAC-SHA256 / HS256) ticket whose
+        payload is `{ uid, accountType, jti, iat, exp, aud, iss }`. `exp` is at
+        most 5 minutes after `iat` (`ZONE_TICKET_TTL_SECONDS`, capped at 300).
+        Default `aud` is `zoneserver`. Canonical encoding, C# verification, and
+        the MMO-51 test vector are in `docs/zoneserver-ticket.md`.
+
+        The HMAC key is a CDK-generated Secrets Manager secret
+        `mmo-{stage}/zoneserver-ticket` (`{ "secret": "..." }`). It is never
+        in git, never in the client, and never logged. ZoneServer reads it by
+        secret **name** with read-only `GetSecretValue`.
+
+        Send the Firebase token as `Authorization: Bearer <token>` or as
+        `{ "firebaseIdToken": "<token>" }`.
       security:
-        - bearerAuth: []
+        - firebaseAuth: []
       requestBody:
+        required: false
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                firebaseIdToken:
-                  type: string
+              $ref: '#/components/schemas/AuthSessionRequest'
+            example:
+              firebaseIdToken: firebase-id-token
       responses:
         '200':
-          description: Game session issued
+          description: Short-lived ZoneServer ticket issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSessionResponse'
+              example:
+                ticket: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOiJmaXJlYmFzZS11aWQtYWJjMTIzIiwiYWNjb3VudFR5cGUiOiJwbGF5ZXIiLCJqdGkiOiIxMTExMTExMS0yMjIyLTQzMzMtODQ0NC01NTU1NTU1NTU1NTUiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDMwMCwiYXVkIjoiem9uZXNlcnZlciIsImlzcyI6Im1tby1hcGkifQ.example
+                uid: firebase-uid-abc123
+                accountType: player
+                expiresInSeconds: 300
+        '401':
+          description: Missing, malformed, invalid signature, wrong issuer, wrong audience, or expired Firebase token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Invalid Firebase token"
+        '403':
+          description: Firebase token is valid but no UsersTable row exists for this uid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "No user profile. Call /users/me first."
 
   /users/me:
     get:
@@ -1309,6 +1358,43 @@ components:
           type: number
         z:
           type: number
+
+    AuthSessionRequest:
+      type: object
+      description: |
+        Optional body form of the Firebase ID token. Prefer
+        `Authorization: Bearer <Firebase ID token>`.
+      properties:
+        firebaseIdToken:
+          type: string
+          minLength: 1
+          description: Firebase ID token (use when not sending Authorization)
+
+    AuthSessionResponse:
+      type: object
+      required:
+        - ticket
+        - uid
+        - accountType
+        - expiresInSeconds
+      properties:
+        ticket:
+          type: string
+          description: |
+            Compact JWS (HS256) ZoneServer ticket. Claims and canonical
+            encoding are documented in docs/zoneserver-ticket.md.
+        uid:
+          type: string
+          description: Firebase uid copied from the verified ID token
+        accountType:
+          type: string
+          enum: [player, admin]
+          description: Users-table account type at ticket issue time
+        expiresInSeconds:
+          type: integer
+          minimum: 1
+          maximum: 300
+          description: Ticket lifetime in seconds (never more than 300)
 
     UsersMeResponse:
       type: object

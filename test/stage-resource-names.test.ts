@@ -79,8 +79,8 @@ const MAIN_PROD_PHYSICAL_NAMES = [
   'mmo-prod/internal-save-api-key',
 ].sort();
 
-const ADDED_DEV_NAMES = ['mmo-dev-users', 'mmo-dev-users-me'];
-const ADDED_PROD_NAMES = ['mmo-prod-users', 'mmo-prod-users-me'];
+const ADDED_DEV_NAMES = ['mmo-dev-users', 'mmo-dev-users-me', 'mmo-dev/zoneserver-ticket'];
+const ADDED_PROD_NAMES = ['mmo-prod-users', 'mmo-prod-users-me', 'mmo-prod/zoneserver-ticket'];
 
 describe('MMO-24: prod CloudFormation stack names only', () => {
   it('namespaces only the prod CloudFormation stack names', () => {
@@ -120,7 +120,7 @@ describe('MMO-24: prod CloudFormation stack names only', () => {
     expect((prodData as cdk.Stack).stackName).toBe('mmo-prod-Data');
   });
 
-  it('dev physical names keep every main resource and only add users table + users-me', () => {
+  it('dev physical names keep every main resource and only add users table, users-me, and zoneserver-ticket', () => {
     const { dev } = createStages();
     const devNames = [
       ...collectHardcodedNames(dev.dataStack),
@@ -175,11 +175,13 @@ describe('MMO-24: prod CloudFormation stack names only', () => {
       'mmo-dev/firebase-service-account',
       'mmo-dev/game-session-jwt',
       'mmo-dev/internal-save-api-key',
+      'mmo-dev/zoneserver-ticket',
     ]);
     expect(byType(prod, 'AWS::SecretsManager::Secret')).toEqual([
       'mmo-prod/firebase-service-account',
       'mmo-prod/game-session-jwt',
       'mmo-prod/internal-save-api-key',
+      'mmo-prod/zoneserver-ticket',
     ]);
     expect(byType(dev, 'AWS::Lambda::Function')).toEqual([
       'mmo-dev-auth-session',
