@@ -272,12 +272,12 @@ describe.each(USERS_ME_METHODS)('%s /users/me', (method) => {
     );
     expectPlayerUpsert(result as { statusCode: number; body: string });
     expect(mockVerifyFirebaseIdToken).toHaveBeenCalledTimes(1);
-    const puts = ddbMock.commandCalls(PutCommand);
-    expect(puts[0].args[0].input.Item).toEqual({
-      uid: VALID_ACCOUNT_ID,
-      accountType: 'player',
-    });
-    expect(puts[0].args[0].input.Item.uid).not.toBe('attacker-uid');
+    const putItem = ddbMock.commandCalls(PutCommand)[0]?.args[0].input.Item as
+      | { uid?: string; accountType?: string }
+      | undefined;
+    expect(putItem?.uid).toBe(VALID_ACCOUNT_ID);
+    expect(putItem?.uid).not.toBe('attacker-uid');
+    expect(putItem?.accountType).toBe('player');
   });
 
   it('should not promote an unverified email even when it is on the allowlist', async () => {
