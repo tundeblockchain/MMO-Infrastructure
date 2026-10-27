@@ -534,7 +534,7 @@ describe('Admin Entity Response Shapes (MMO-10)', () => {
           defenseConstant: { baseConstant: 200, levelMultiplier: 15 },
           armorReductionPerPoint: 0.001,
           maxArmorReduction: 0.75,
-          blockDamageReduction: 0.5,
+          blockDamageReduction: 0.6,
         },
         additionalConstants: {
           defaultAttackRange: 2.5,

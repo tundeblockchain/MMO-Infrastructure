@@ -251,7 +251,7 @@ export const STATUSES_V1: StatusDefinition[] = [
     displayName: 'Harmony',
     description: 'In harmony with allies, increased healing received.',
     category: 'hot',
-    maxStacks: 1,
+    maxStacks: 5,
     dispellable: true,
     persistsThroughDeath: false,
     iconPath: 'icons/statuses/harmony.png',

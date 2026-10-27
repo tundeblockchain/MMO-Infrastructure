@@ -439,11 +439,31 @@ describe('Seed Catalog V1 - Exact Spec Values', () => {
       expect(COMBAT_CONSTANTS_V1.pvp).toBeDefined();
       expect(COMBAT_CONSTANTS_V1.pvp.globalDamageMultiplier).toBeLessThan(1);
     });
+
+    it('should match README catalog combat values', () => {
+      expect(COMBAT_CONSTANTS_V1.defense.blockDamageReduction).toBe(0.60);
+      expect(COMBAT_CONSTANTS_V1.timing.globalCooldown).toBe(0.75);
+      expect(COMBAT_CONSTANTS_V1.pvp.globalDamageMultiplier).toBe(0.80);
+      expect(COMBAT_CONSTANTS_V1.pvp.globalHealingMultiplier).toBe(0.75);
+    });
+
+    it('should keep V2 identical to V1 except additionalConstants', () => {
+      expect(COMBAT_CONSTANTS_V2.defense.blockDamageReduction).toBe(0.60);
+      expect(COMBAT_CONSTANTS_V2.timing.globalCooldown).toBe(0.75);
+      expect(COMBAT_CONSTANTS_V2.pvp.globalDamageMultiplier).toBe(0.80);
+      expect(COMBAT_CONSTANTS_V2.pvp.globalHealingMultiplier).toBe(0.75);
+    });
   });
 
   describe('Statuses and Elements - Non-Empty', () => {
     it('should have statuses non-empty', () => {
       expect(STATUSES_V1.length).toBeGreaterThan(0);
+    });
+
+    it('should have harmony max stacks 5', () => {
+      const harmony = STATUSES_V1.find((status) => status.statusId === 'harmony');
+      expect(harmony).toBeDefined();
+      expect(harmony!.maxStacks).toBe(5);
     });
 
     it('should have elements non-empty', () => {

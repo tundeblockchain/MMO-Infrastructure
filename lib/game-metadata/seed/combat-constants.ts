@@ -73,7 +73,7 @@ export const COMBAT_CONSTANTS_V1: CombatConstants = {
     },
     armorReductionPerPoint: 0.001,
     maxArmorReduction: 0.75,
-    blockDamageReduction: 0.50,
+    blockDamageReduction: 0.60,
   },
   glancingHit: {
     damageMultiplier: 0.50,
@@ -99,7 +99,7 @@ export const COMBAT_CONSTANTS_V1: CombatConstants = {
     maxDodgeChance: 0.40,
   },
   timing: {
-    globalCooldown: 1.5,
+    globalCooldown: 0.75,
     outOfCombatHpRegen: 0.05,
     outOfCombatResourceRegen: 0.10,
     combatDropoffSeconds: 10,
@@ -111,8 +111,8 @@ export const COMBAT_CONSTANTS_V1: CombatConstants = {
     staggerImmunitySeconds: 3,
   },
   pvp: {
-    globalDamageMultiplier: 0.60,
-    globalHealingMultiplier: 0.70,
+    globalDamageMultiplier: 0.80,
+    globalHealingMultiplier: 0.75,
     ccDurationMultiplier: 0.50,
     executeThresholdModifier: -0.10,
   },

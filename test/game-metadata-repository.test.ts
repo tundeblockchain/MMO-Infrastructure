@@ -97,7 +97,7 @@ function createFullCombatConstants(): CombatConstants {
       },
       armorReductionPerPoint: 0.001,
       maxArmorReduction: 0.75,
-      blockDamageReduction: 0.50,
+      blockDamageReduction: 0.60,
     },
     glancingHit: {
       damageMultiplier: 0.50,
@@ -122,7 +122,7 @@ function createFullCombatConstants(): CombatConstants {
       maxDodgeChance: 0.40,
     },
     timing: {
-      globalCooldown: 1.5,
+      globalCooldown: 0.75,
       outOfCombatHpRegen: 0.05,
       outOfCombatResourceRegen: 0.10,
       combatDropoffSeconds: 10,
@@ -134,8 +134,8 @@ function createFullCombatConstants(): CombatConstants {
       staggerImmunitySeconds: 3,
     },
     pvp: {
-      globalDamageMultiplier: 0.60,
-      globalHealingMultiplier: 0.70,
+      globalDamageMultiplier: 0.80,
+      globalHealingMultiplier: 0.75,
       ccDurationMultiplier: 0.50,
       executeThresholdModifier: -0.10,
     },
@@ -664,8 +664,8 @@ describe('CombatConstants - Complete Pipeline Coefficients', () => {
       expect(constants.defense.maxArmorReduction).toBe(0.75);
     });
 
-    it('should have block damage reduction (0.50 = 50%)', () => {
-      expect(constants.defense.blockDamageReduction).toBe(0.50);
+    it('should have block damage reduction (0.60 = 60%)', () => {
+      expect(constants.defense.blockDamageReduction).toBe(0.60);
     });
   });
 
@@ -711,10 +711,17 @@ describe('CombatConstants - Complete Pipeline Coefficients', () => {
 
   describe('Timing Constants', () => {
     it('should have GCD and regen values', () => {
-      expect(constants.timing.globalCooldown).toBe(1.5);
+      expect(constants.timing.globalCooldown).toBe(0.75);
       expect(constants.timing.outOfCombatHpRegen).toBe(0.05);
       expect(constants.timing.outOfCombatResourceRegen).toBe(0.10);
       expect(constants.timing.combatDropoffSeconds).toBe(10);
+    });
+  });
+
+  describe('PvP Constants', () => {
+    it('should have global PvP damage and healing multipliers', () => {
+      expect(constants.pvp.globalDamageMultiplier).toBe(0.80);
+      expect(constants.pvp.globalHealingMultiplier).toBe(0.75);
     });
   });
 

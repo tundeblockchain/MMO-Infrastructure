@@ -720,7 +720,7 @@ describe('Admin Publish Scenarios (MMO-11)', () => {
           defenseConstant: { baseConstant: 200, levelMultiplier: 15 },
           armorReductionPerPoint: 0.001,
           maxArmorReduction: 0.75,
-          blockDamageReduction: 0.50,
+          blockDamageReduction: 0.60,
         },
         glancingHit: { damageMultiplier: 0.50, canCrit: false, canStagger: false },
         status: { resistanceConstant: 100 },
@@ -731,7 +731,7 @@ describe('Admin Publish Scenarios (MMO-11)', () => {
         statCaps: { softCap: 100, hardCap: 150, softCapPenalty: 0.50 },
         dodge: { baseDodgeChance: 0.02, maxDodgeChance: 0.40 },
         timing: {
-          globalCooldown: 1.5,
+          globalCooldown: 0.75,
           outOfCombatHpRegen: 0.05,
           outOfCombatResourceRegen: 0.10,
           combatDropoffSeconds: 10,
@@ -743,8 +743,8 @@ describe('Admin Publish Scenarios (MMO-11)', () => {
           staggerImmunitySeconds: 3,
         },
         pvp: {
-          globalDamageMultiplier: 0.60,
-          globalHealingMultiplier: 0.70,
+          globalDamageMultiplier: 0.80,
+          globalHealingMultiplier: 0.75,
           ccDurationMultiplier: 0.50,
           executeThresholdModifier: -0.10,
         },
