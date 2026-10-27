@@ -1,15 +1,16 @@
 openapi: 3.0.3
 info:
   title: MMO Character API
-  version: 0.4.0
+  version: 0.5.0
   description: |
     MMO backend API for character management, authentication, and game metadata catalogs.
     
     **Authentication:**
+    - `POST /auth/session` verifies a Firebase ID token (signature, issuer, audience, expiry, revocation) and issues a short-lived HMAC-SHA256 ZoneServer `ticket` (MMO-50) — that field is what the client sends to ZoneServer, not `gameSessionToken`. A UsersTable row must already exist and not be `banned: true`; otherwise 403 `NO_PROFILE` or `BANNED`. Errors use `{ code, message }`.
     - Character endpoints use Firebase ID tokens or game session JWTs
     - Catalog write endpoints require Firebase ID tokens whose uid has `accountType: admin` in the users table (missing row = player)
     - Catalog read endpoints are unauthenticated (for ZoneServer caching)
-    - mmo-admin must call `GET` or `POST /users/me` with the Bearer ID token right after sign-in, before any publish
+    - mmo-admin must call `GET` or `POST /users/me` with the Bearer ID token right after sign-in, before any publish or session ticket
     
     **Catalog Read APIs (MMO-6, MMO-10):**
     GET endpoints for versioned game metadata catalogs. All reads are by explicit version.
@@ -75,20 +76,112 @@ paths:
   /auth/session:
     post:
       tags: [auth]
-      summary: Exchange Firebase ID token for game session JWT
+      summary: Exchange Firebase ID token for a short-lived ZoneServer ticket
+      description: |
+        Verifies a Firebase ID token with Firebase Admin
+        `verifyIdToken(token, true)` (`checkRevoked: true`): signature, expiry,
+        `aud` / `iss` must match the Firebase `project_id` from Secrets Manager
+        `mmo-{stage}/firebase-service-account`, plus revocation and disabled
+        users (`auth/id-token-revoked`, `auth/user-disabled`). Fail closed:
+        any verification error is **401** `UNAUTHORIZED`.
+
+        After verification, auth-session looks up `uid` in the users table.
+        A missing row is **403** `NO_PROFILE` — the client must call
+        `GET` or `POST /users/me` first. The handler never creates the row.
+        A row with `banned: true` is **403** `BANNED`.
+
+        On success it returns `{ ticket, uid, accountType, expiresInSeconds }`.
+        **`ticket` is the value the client sends to ZoneServer.** This is not
+        `gameSessionToken` (the older 24h character / enter-world JWT).
+        `/auth/session` does not return `gameSessionToken`.
+
+        The ticket is a compact JWS (HMAC-SHA256 / HS256) whose payload is
+        `{ uid, accountType, jti, iat, exp, aud, iss }`. `exp` is at most
+        5 minutes after `iat` (`ZONE_TICKET_TTL_SECONDS`, capped at 300).
+        Default `aud` is `zoneserver`. Canonical encoding, C# verification,
+        error codes, and the MMO-51 test vector are in
+        `docs/zoneserver-ticket.md`.
+
+        The HMAC key is a CDK-generated Secrets Manager secret
+        `mmo-{stage}/zoneserver-ticket` (`{ "secret": "..." }`). It is never
+        in git, never in the client, never logged, and never set as a
+        plaintext Lambda env var. ZoneServer reads it by secret **name**
+        with read-only `GetSecretValue`.
+
+        Send the Firebase token as `Authorization: Bearer <token>` or as
+        `{ "firebaseIdToken": "<token>" }`.
+
+        Errors use `{ code, message }`. `SERVER_FULL` is reserved for
+        ZoneServer (capacity) and is never returned by this endpoint.
       security:
-        - bearerAuth: []
+        - firebaseAuth: []
       requestBody:
+        required: false
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                firebaseIdToken:
-                  type: string
+              $ref: '#/components/schemas/AuthSessionRequest'
+            example:
+              firebaseIdToken: firebase-id-token
       responses:
         '200':
-          description: Game session issued
+          description: Short-lived ZoneServer ticket issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSessionResponse'
+              example:
+                ticket: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOiJmaXJlYmFzZS11aWQtYWJjMTIzIiwiYWNjb3VudFR5cGUiOiJwbGF5ZXIiLCJqdGkiOiIxMTExMTExMS0yMjIyLTQzMzMtODQ0NC01NTU1NTU1NTU1NTUiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDMwMCwiYXVkIjoiem9uZXNlcnZlciIsImlzcyI6Im1tby1hcGkifQ.example
+                uid: firebase-uid-abc123
+                accountType: player
+                expiresInSeconds: 300
+        '401':
+          description: |
+            Missing, malformed, invalid signature, wrong issuer, wrong audience,
+            expired, revoked, or disabled-user Firebase token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSessionError'
+              examples:
+                missing:
+                  summary: Missing token
+                  value:
+                    code: UNAUTHORIZED
+                    message: Missing Firebase ID token
+                invalid:
+                  summary: Invalid, expired, wrong-aud, revoked, or disabled
+                  value:
+                    code: UNAUTHORIZED
+                    message: Invalid Firebase token
+        '403':
+          description: |
+            Token is valid but the UsersTable row is missing (`NO_PROFILE`)
+            or marked `banned: true` (`BANNED`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSessionError'
+              examples:
+                noProfile:
+                  summary: No users-table row
+                  value:
+                    code: NO_PROFILE
+                    message: "No user profile. Call /users/me first."
+                banned:
+                  summary: Users-table row has banned true
+                  value:
+                    code: BANNED
+                    message: Account is banned
+        '500':
+          description: Unexpected server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSessionError'
+              example:
+                code: INTERNAL
+                message: Internal server error
 
   /users/me:
     get:
@@ -1310,6 +1403,45 @@ components:
         z:
           type: number
 
+    AuthSessionRequest:
+      type: object
+      description: |
+        Optional body form of the Firebase ID token. Prefer
+        `Authorization: Bearer <Firebase ID token>`.
+      properties:
+        firebaseIdToken:
+          type: string
+          minLength: 1
+          description: Firebase ID token (use when not sending Authorization)
+
+    AuthSessionResponse:
+      type: object
+      required:
+        - ticket
+        - uid
+        - accountType
+        - expiresInSeconds
+      properties:
+        ticket:
+          type: string
+          description: |
+            Compact JWS (HS256) ZoneServer handshake ticket. **Send this
+            field to ZoneServer.** Not `gameSessionToken` (the older 24h
+            character / enter-world JWT). Claims and encoding are in
+            docs/zoneserver-ticket.md.
+        uid:
+          type: string
+          description: Firebase uid copied from the verified ID token
+        accountType:
+          type: string
+          enum: [player, admin]
+          description: Users-table account type at ticket issue time
+        expiresInSeconds:
+          type: integer
+          minimum: 1
+          maximum: 300
+          description: Ticket lifetime in seconds (never more than 300)
+
     UsersMeResponse:
       type: object
       required:
@@ -1326,6 +1458,35 @@ components:
             Users-table account type after upsert. New callers are `player`.
             `admin` only when the verified email is on ADMIN_EMAIL_ALLOWLIST.
             The client cannot set this field.
+
+    AuthSessionError:
+      type: object
+      description: |
+        Stable `/auth/session` error body. `code` is machine-readable;
+        `message` is human-readable. `SERVER_FULL` is reserved for
+        ZoneServer and is not returned by this API.
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum:
+            - UNAUTHORIZED
+            - NO_PROFILE
+            - BANNED
+            - SERVER_FULL
+            - INTERNAL
+          description: |
+            `UNAUTHORIZED` (401): missing / invalid / expired / wrong-aud /
+            revoked / disabled Firebase token.
+            `NO_PROFILE` (403): no UsersTable row — call `/users/me` first.
+            `BANNED` (403): UsersTable row has `banned: true`.
+            `SERVER_FULL`: reserved; ZoneServer owns capacity decisions.
+            `INTERNAL` (500): unexpected server error.
+        message:
+          type: string
+          description: Human-readable error message
 
     Error:
       type: object

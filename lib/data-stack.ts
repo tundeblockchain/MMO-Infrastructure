@@ -12,6 +12,7 @@ export class DataStack extends cdk.Stack {
   public readonly usersTable: dynamodb.Table;
   public readonly firebaseSecret: secretsmanager.ISecret;
   public readonly gameJwtSecret: secretsmanager.ISecret;
+  public readonly zoneTicketSecret: secretsmanager.ISecret;
   public readonly internalSaveApiSecret: secretsmanager.ISecret;
 
   constructor(scope: Construct, id: string, props: DataStackProps) {
@@ -80,6 +81,21 @@ export class DataStack extends cdk.Stack {
       },
     });
 
+    // HMAC-SHA256 key for short-lived ZoneServer tickets (MMO-50).
+    // Generated at deploy time. Never commit the value; Lambdas and
+    // ZoneServer read it from Secrets Manager at runtime.
+    this.zoneTicketSecret = new secretsmanager.Secret(this, 'ZoneServerTicketSecret', {
+      secretName: `${prefix}/zoneserver-ticket`,
+      description:
+        'HMAC-SHA256 key for short-lived ZoneServer tickets issued by auth-session',
+      generateSecretString: {
+        secretStringTemplate: JSON.stringify({}),
+        generateStringKey: 'secret',
+        excludePunctuation: true,
+        passwordLength: 64,
+      },
+    });
+
     this.internalSaveApiSecret = new secretsmanager.Secret(this, 'InternalSaveApiKey', {
       secretName: `${prefix}/internal-save-api-key`,
       description: 'API key for ZoneServer -> PUT /characters/{id} saves',
@@ -114,6 +130,11 @@ export class DataStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'InternalSaveApiSecretArn', {
       value: this.internalSaveApiSecret.secretArn,
       exportName: `${prefix}-internal-save-api-secret-arn`,
+    });
+
+    new cdk.CfnOutput(this, 'ZoneServerTicketSecretName', {
+      value: `${prefix}/zoneserver-ticket`,
+      exportName: `${prefix}-zoneserver-ticket-secret-name`,
     });
   }
 }

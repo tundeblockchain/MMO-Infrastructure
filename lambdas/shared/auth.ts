@@ -20,11 +20,16 @@ export interface GameSessionClaims {
 /**
  * Verify a Firebase ID token with the Admin SDK (Google cert signature,
  * issuer, audience = project_id from the uploaded service-account secret,
- * and expiry). Throws on any failed check so callers can fail closed with 401.
+ * and expiry). Pass `{ checkRevoked: true }` so revoked tokens and disabled
+ * users fail (`auth/id-token-revoked`, `auth/user-disabled`). Throws on any
+ * failed check so callers can fail closed with 401.
  */
-export async function verifyFirebaseIdToken(idToken: string): Promise<admin.auth.DecodedIdToken> {
+export async function verifyFirebaseIdToken(
+  idToken: string,
+  options?: { checkRevoked?: boolean }
+): Promise<admin.auth.DecodedIdToken> {
   await ensureFirebaseInitialized();
-  return admin.auth().verifyIdToken(idToken);
+  return admin.auth().verifyIdToken(idToken, options?.checkRevoked === true);
 }
 
 export async function issueGameSessionToken(

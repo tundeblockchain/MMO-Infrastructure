@@ -66,6 +66,7 @@ export class MmoStage extends cdk.Stage {
       usersTable: this.dataStack.usersTable,
       firebaseSecret: this.dataStack.firebaseSecret,
       gameJwtSecret: this.dataStack.gameJwtSecret,
+      zoneTicketSecret: this.dataStack.zoneTicketSecret,
       internalSaveApiSecret: this.dataStack.internalSaveApiSecret,
       adminEmailAllowlist,
     });
