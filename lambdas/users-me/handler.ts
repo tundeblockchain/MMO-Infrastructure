@@ -4,8 +4,11 @@
  * Authenticated upsert of the signed-in Firebase user into the users table.
  *
  * GET /users/me and POST /users/me
- * - 401: missing Bearer token or verifyIdToken failed
+ * - 401: missing Bearer token or verifyIdToken failed (signature / aud / iss / expiry)
  * - 200: { uid, accountType }
+ *
+ * uid is taken only from the verified token. Request body uid / accountType
+ * are ignored; the client cannot set accountType.
  *
  * Promotion (fail closed):
  * - accountType admin only when the verified token has email_verified true
@@ -15,6 +18,7 @@
  * - missing, empty, or non-matching allowlist → upsert player
  * - an existing player row is promoted when the caller is allowlisted+verified
  * - never downgrade an existing admin
+ * - repeat login of an existing player is idempotent (no second row, no rewrite)
  *
  * Blanket AUTO_ADMIN_ON_LOGIN is ignored. Demote a leftover admin row by hand
  * with put-item accountType player. The table remains the only publish gate.
@@ -186,8 +190,8 @@ async function upsertCaller(caller: VerifiedCaller): Promise<AccountType> {
   }
 
   const existing = await lookupAccountType(usersTableName, caller.uid);
-  if (existing === 'admin') {
-    return 'admin';
+  if (existing === 'admin' || existing === 'player') {
+    return existing;
   }
 
   await putAccountType(usersTableName, caller.uid, 'player');

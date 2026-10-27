@@ -377,7 +377,9 @@ The token is verified with Firebase Admin `verifyIdToken` (signature, expiry, an
 
 **mmo-admin contract:** after Firebase sign-in, call `GET` or `POST /users/me`
 with `Authorization: Bearer <Firebase ID token>` **before any publish**. Response
-`200 { "uid", "accountType" }`. Missing/invalid token → **401**.
+`200 { "uid", "accountType" }`. Missing/invalid/expired/wrong-audience token →
+**401**. Body `uid` and `accountType` are ignored; uid comes only from the
+verified token. The client cannot set `accountType`.
 
 **Admin-only publish:** after the token is verified, catalog-write looks up `uid`
 in the users table (`mmo-dev-users` / `mmo-prod-users`). Publish is allowed only

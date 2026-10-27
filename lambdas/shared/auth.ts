@@ -17,6 +17,11 @@ export interface GameSessionClaims {
   stage: string;
 }
 
+/**
+ * Verify a Firebase ID token with the Admin SDK (Google cert signature,
+ * issuer, audience = project_id from the uploaded service-account secret,
+ * and expiry). Throws on any failed check so callers can fail closed with 401.
+ */
 export async function verifyFirebaseIdToken(idToken: string): Promise<admin.auth.DecodedIdToken> {
   await ensureFirebaseInitialized();
   return admin.auth().verifyIdToken(idToken);

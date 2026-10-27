@@ -95,34 +95,70 @@ paths:
       tags: [users]
       summary: Upsert the signed-in Firebase user into the users table
       description: |
-        Same as POST `/users/me`. Verifies a Firebase ID token, then upserts
-        `uid` into the users table. An existing `player` row is promoted to
-        `admin` when the caller is allowlisted and email-verified.
+        Same as POST `/users/me`. Verifies a Firebase ID token (Google cert
+        signature, issuer, audience = Firebase `project_id` from the uploaded
+        service-account secret, expiry), then upserts `uid` from that token
+        into the users table. Request body `uid` / `accountType` are ignored.
+        An existing `player` row is promoted to `admin` when the caller is
+        allowlisted and email-verified. Repeat login is idempotent.
       security:
         - firebaseAuth: []
       responses:
         '200':
-          description: Caller upserted
+          description: |
+            Caller upserted. New uid → `player`. Repeat login returns the
+            existing row (`player` or `admin`) without a duplicate.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/UsersMeResponse'
-              example:
-                uid: firebase-uid-abc123
-                accountType: admin
+              examples:
+                player:
+                  summary: New or non-allowlisted caller
+                  value:
+                    uid: firebase-uid-abc123
+                    accountType: player
+                admin:
+                  summary: Allowlisted verified email
+                  value:
+                    uid: firebase-uid-abc123
+                    accountType: admin
         '401':
-          description: Missing, malformed, invalid, or expired Firebase token
+          description: |
+            Missing, malformed, invalid, expired, or wrong-audience Firebase
+            token. Fail closed — no users-table write.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                missing:
+                  summary: Missing or malformed Authorization header
+                  value:
+                    error: "Valid Firebase ID token required"
+                expired:
+                  summary: Expired token
+                  value:
+                    error: "Valid Firebase ID token required"
+                wrongAudience:
+                  summary: Token audience is not this Firebase project
+                  value:
+                    error: "Valid Firebase ID token required"
+        '500':
+          description: Unexpected server error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               example:
-                error: "Valid Firebase ID token required"
+                error: "Internal server error"
     post:
       tags: [users]
       summary: Upsert the signed-in Firebase user into the users table
       description: |
-        Verifies a Firebase ID token, then upserts `uid` into the users table.
+        Verifies a Firebase ID token (Google cert signature, issuer, audience =
+        Firebase `project_id` from the uploaded service-account secret, expiry),
+        then upserts `uid` from that token into the users table.
         **mmo-admin:** call GET or POST with `Authorization: Bearer <Firebase ID token>`
         right after sign-in, before any catalog publish.
 
@@ -133,30 +169,86 @@ paths:
         claim, then from `firebase.identities.email`. Missing or empty
         allowlist fails closed. Everyone else is upserted as `player`. An
         existing `player` row is promoted when the caller is allowlisted and
-        verified. Existing admins are never demoted automatically.
+        verified. Existing admins are never demoted automatically. Repeat
+        login of an existing player does not create a second row.
+
+        The client cannot set `accountType`. Body `uid` and `accountType` are
+        ignored; uid comes only from the verified token.
 
         Catalog publish still uses the users table as the only admin gate
         (403 unless `accountType === admin`).
       security:
         - firebaseAuth: []
+      requestBody:
+        required: false
+        description: |
+          Optional and ignored. `uid` and `accountType` in the body are never
+          used. The uid is taken only from the verified Firebase ID token.
+          `accountType` is derived from the allowlist / existing row.
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              properties:
+                uid:
+                  type: string
+                  description: Ignored. uid is taken from the verified token only.
+                accountType:
+                  type: string
+                  description: Ignored. The client cannot set accountType.
+            example:
+              uid: attacker-uid
+              accountType: admin
       responses:
         '200':
-          description: Caller upserted
+          description: |
+            Caller upserted. New uid → `player`. Repeat login returns the
+            existing row (`player` or `admin`) without a duplicate.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/UsersMeResponse'
-              example:
-                uid: firebase-uid-abc123
-                accountType: admin
+              examples:
+                player:
+                  summary: New or non-allowlisted caller
+                  value:
+                    uid: firebase-uid-abc123
+                    accountType: player
+                admin:
+                  summary: Allowlisted verified email
+                  value:
+                    uid: firebase-uid-abc123
+                    accountType: admin
         '401':
-          description: Missing, malformed, invalid, or expired Firebase token
+          description: |
+            Missing, malformed, invalid, expired, or wrong-audience Firebase
+            token. Fail closed — no users-table write.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                missing:
+                  summary: Missing or malformed Authorization header
+                  value:
+                    error: "Valid Firebase ID token required"
+                expired:
+                  summary: Expired token
+                  value:
+                    error: "Valid Firebase ID token required"
+                wrongAudience:
+                  summary: Token audience is not this Firebase project
+                  value:
+                    error: "Valid Firebase ID token required"
+        '500':
+          description: Unexpected server error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               example:
-                error: "Valid Firebase ID token required"
+                error: "Internal server error"
 
   /characters:
     get:
@@ -1226,11 +1318,14 @@ components:
       properties:
         uid:
           type: string
-          description: Firebase UID of the signed-in caller
+          description: Firebase UID from the verified ID token (never from the request body)
         accountType:
           type: string
           enum: [player, admin]
-          description: Users-table account type after upsert
+          description: |
+            Users-table account type after upsert. New callers are `player`.
+            `admin` only when the verified email is on ADMIN_EMAIL_ALLOWLIST.
+            The client cannot set this field.
 
     Error:
       type: object
