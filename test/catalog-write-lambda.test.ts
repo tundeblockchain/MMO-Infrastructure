@@ -273,6 +273,23 @@ describe('Catalog Write Lambda Handler', () => {
       expect(response.statusCode).toBe(401);
       expect(JSON.parse(response.body).error).toContain('Firebase ID token required');
     });
+
+    it('should return 401 when the token audience is wrong', async () => {
+      mockVerifyFirebaseIdToken.mockRejectedValueOnce(
+        new Error('Firebase ID token has incorrect "aud" (audience) claim')
+      );
+
+      const event = createMockEvent('POST', '/catalog/class/versions', {
+        authorization: 'Bearer wrong-audience-token',
+        body: { data: [{ classId: 'vanguard' }] },
+      });
+
+      const result = await handler(event, {} as never, {} as never);
+      const response = result as { statusCode: number; body: string };
+
+      expect(response.statusCode).toBe(401);
+      expect(JSON.parse(response.body).error).toContain('Firebase ID token required');
+    });
   });
 
   describe('Authorization - Users table accountType (MMO-27)', () => {

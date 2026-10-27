@@ -5,7 +5,8 @@
  * Admin promotion requires a verified email (boolean true or string "true")
  * AND a normalized email on ADMIN_EMAIL_ALLOWLIST. Missing/empty allowlist
  * fails closed. Existing player rows are promoted; existing admins are
- * never demoted. AUTO_ADMIN_ON_LOGIN is ignored.
+ * never demoted. AUTO_ADMIN_ON_LOGIN is ignored. Body uid / accountType
+ * are ignored. Bad, expired, or wrong-audience tokens fail closed with 401.
  */
 
 import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
@@ -62,7 +63,7 @@ function decodedToken(overrides?: {
 function createMockEvent(
   method: string,
   path: string,
-  options?: { authorization?: string }
+  options?: { authorization?: string; body?: unknown }
 ): APIGatewayProxyEventV2 {
   return {
     version: '2.0',
@@ -72,6 +73,7 @@ function createMockEvent(
     headers: {
       ...(options?.authorization ? { authorization: options.authorization } : {}),
     },
+    body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
     requestContext: {
       accountId: '123456789012',
       apiId: 'api123',
@@ -158,6 +160,124 @@ describe.each(USERS_ME_METHODS)('%s /users/me', (method) => {
     expect(response.statusCode).toBe(401);
     expect(JSON.parse(response.body).error).toContain('Firebase ID token required');
     expect(ddbMock.commandCalls(PutCommand)).toHaveLength(0);
+  });
+
+  it('should return 401 when the token is malformed', async () => {
+    mockVerifyFirebaseIdToken.mockRejectedValueOnce(
+      new Error('Decoding Firebase ID token failed')
+    );
+
+    const result = await handler(
+      createMockEvent(method, '/users/me', { authorization: 'Bearer not-a-jwt' }),
+      {} as never,
+      {} as never
+    );
+    const response = result as { statusCode: number; body: string };
+
+    expect(response.statusCode).toBe(401);
+    expect(JSON.parse(response.body).error).toContain('Firebase ID token required');
+    expect(ddbMock.commandCalls(GetCommand)).toHaveLength(0);
+    expect(ddbMock.commandCalls(PutCommand)).toHaveLength(0);
+  });
+
+  it('should return 401 when the token is expired', async () => {
+    mockVerifyFirebaseIdToken.mockRejectedValueOnce(new Error('Firebase ID token has expired'));
+
+    const result = await handler(
+      createMockEvent(method, '/users/me', { authorization: 'Bearer expired-id-token' }),
+      {} as never,
+      {} as never
+    );
+    const response = result as { statusCode: number; body: string };
+
+    expect(response.statusCode).toBe(401);
+    expect(JSON.parse(response.body).error).toContain('Firebase ID token required');
+    expect(ddbMock.commandCalls(PutCommand)).toHaveLength(0);
+  });
+
+  it('should return 401 when the token audience is wrong', async () => {
+    mockVerifyFirebaseIdToken.mockRejectedValueOnce(
+      new Error('Firebase ID token has incorrect "aud" (audience) claim')
+    );
+
+    const result = await handler(
+      createMockEvent(method, '/users/me', { authorization: 'Bearer wrong-audience-token' }),
+      {} as never,
+      {} as never
+    );
+    const response = result as { statusCode: number; body: string };
+
+    expect(response.statusCode).toBe(401);
+    expect(JSON.parse(response.body).error).toContain('Firebase ID token required');
+    expect(ddbMock.commandCalls(PutCommand)).toHaveLength(0);
+  });
+
+  it('should create a player row for a new uid', async () => {
+    mockVerifyFirebaseIdToken.mockResolvedValueOnce(
+      decodedToken({ email: 'player@example.com', email_verified: true })
+    );
+    ddbMock.on(GetCommand).resolves({});
+    ddbMock.on(PutCommand).resolves({});
+
+    const result = await handler(
+      createMockEvent(method, '/users/me', { authorization: VALID_TOKEN }),
+      {} as never,
+      {} as never
+    );
+    expectPlayerUpsert(result as { statusCode: number; body: string });
+  });
+
+  it('should not write a second row on repeat player login', async () => {
+    mockVerifyFirebaseIdToken.mockResolvedValueOnce(
+      decodedToken({ email: 'player@example.com', email_verified: true })
+    );
+    ddbMock.on(GetCommand).resolves({
+      Item: { uid: VALID_ACCOUNT_ID, accountType: 'player' },
+    });
+
+    const result = await handler(
+      createMockEvent(method, '/users/me', { authorization: VALID_TOKEN }),
+      {} as never,
+      {} as never
+    );
+    const response = result as { statusCode: number; body: string };
+
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body)).toEqual({
+      uid: VALID_ACCOUNT_ID,
+      accountType: 'player',
+    });
+    expect(ddbMock.commandCalls(GetCommand)).toHaveLength(1);
+    expect(ddbMock.commandCalls(GetCommand)[0].args[0].input).toEqual({
+      TableName: USERS_TABLE_NAME,
+      Key: { uid: VALID_ACCOUNT_ID },
+    });
+    expect(ddbMock.commandCalls(PutCommand)).toHaveLength(0);
+  });
+
+  it('should ignore body-supplied uid and accountType', async () => {
+    mockVerifyFirebaseIdToken.mockResolvedValueOnce(
+      decodedToken({ email: 'player@example.com', email_verified: true })
+    );
+    ddbMock.on(GetCommand).resolves({});
+    ddbMock.on(PutCommand).resolves({});
+
+    const result = await handler(
+      createMockEvent(method, '/users/me', {
+        authorization: VALID_TOKEN,
+        body: { uid: 'attacker-uid', accountType: 'admin' },
+      }),
+      {} as never,
+      {} as never
+    );
+    expectPlayerUpsert(result as { statusCode: number; body: string });
+    expect(mockVerifyFirebaseIdToken).toHaveBeenCalledTimes(1);
+    const putItem = ddbMock.commandCalls(PutCommand)[0]?.args[0].input.Item as
+      | { uid?: string; accountType?: string }
+      | undefined;
+    expect(putItem?.uid).toBe(VALID_ACCOUNT_ID);
+    expect(putItem?.uid).not.toBe('attacker-uid');
+    expect(putItem?.accountType).toBe('player');
   });
 
   it('should not promote an unverified email even when it is on the allowlist', async () => {

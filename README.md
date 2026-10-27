@@ -94,8 +94,10 @@ or invalid/expired tokens return **401**. A valid token whose account is not adm
 
 **mmo-admin contract:** right after Firebase sign-in, before any publish, call
 `GET` or `POST /users/me` with `Authorization: Bearer <Firebase ID token>`. That
-upserts the caller's `uid` into the users table and returns
-`{ "uid", "accountType" }`.
+upserts the caller's `uid` (from the verified token only) into the users table
+and returns `{ "uid", "accountType" }`. Body `uid` and `accountType` are ignored;
+the client cannot set `accountType`. Missing, invalid, expired, or wrong-audience
+tokens return **401**.
 
 `/users/me` writes `accountType: admin` only when the verified Firebase token
 has `email_verified` true (boolean or the string `"true"`) **and** the email
@@ -104,7 +106,7 @@ top-level claim, then from `firebase.identities.email` (Google sign-in).
 Everyone else is upserted as `player`. A missing or empty allowlist fails
 closed (nobody is promoted). An existing `player` row is **promoted** when the
 caller is allowlisted and verified. Existing admins are **never** demoted
-automatically.
+automatically. Repeat login is idempotent (no duplicate row).
 
 ### Admin email allowlist (per stage)
 
